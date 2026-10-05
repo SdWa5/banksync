@@ -6,7 +6,7 @@ BankSync is a Dolibarr external module for importing, classifying, reconciling a
 
 `SdWa5/banksync` is a fork of [`vanyolai/dolibarr-banksync`](https://github.com/vanyolai/dolibarr-banksync), based on upstream commit `6c3001b` (0.5.1). It adds:
 
-- a **PayPal provider** reading the Transaction Search API, with fees as entries of their own and the PayPal transaction ID on every bank line;
+- a **PayPal provider** reading the Transaction Search API, with fees as entries of their own, payments in another currency staged through their conversion, and the PayPal transaction ID on every bank line;
 - a **daily scheduled job** that fetches PayPal from a cutover date, stages, matches and applies a narrow **auto-post policy** (fees, single confirmed supplier invoices, reimbursements whose reference names the invoices), with a dry-run default;
 - a **queue** for everything else, with the reason per transaction, Belege per transaction, a Belege inbox, "create supplier invoice from transaction", a home-page box and mail with backoff reminders;
 - a PHPUnit suite.

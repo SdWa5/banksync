@@ -153,6 +153,71 @@ final class PayPalTransactionMapperTest extends TestCase
         yield 'comma' => ['1,50'];
     }
 
+    public function testCartItemsAreTheLastReferenceFallback(): void
+    {
+        $detail = $this->detail();
+        $detail['cart_info'] = ['item_details' => [['item_name' => 'DC adapter 5.5x2.1'], ['item_name' => 'DC adapter 5.5x2.1'], ['item_name' => 'XLR cable']]];
+
+        self::assertSame('DC adapter 5.5x2.1; XLR cable', $this->mapper()->map($detail, 'paypal@sdwa5.org')[0]->reference);
+
+        $detail['transaction_info']['invoice_id'] = 'RE-1';
+        self::assertSame('RE-1', $this->mapper()->map($detail, 'paypal@sdwa5.org')[0]->reference);
+    }
+
+    /**
+     * The shape PayPal returns for a purchase paid in USD from the EUR balance.
+     */
+    public function testMapsAConversionLegWithThePaymentsCounterparty(): void
+    {
+        $payment = $this->detail([
+            'transaction_id' => '2AB34567CD890123F',
+            'transaction_event_code' => 'T0006',
+            'transaction_initiation_date' => '2026-09-08T12:00:00Z',
+            'transaction_amount' => ['currency_code' => 'USD', 'value' => '-20.00'],
+        ], ['email_address' => 'Shop@Example.com', 'payer_name' => ['given_name' => 'Erika', 'surname' => 'Mustermann']]);
+        $payment['cart_info'] = ['item_details' => [['item_name' => 'Test adapter']]];
+        $conversion = $this->detail([
+            'transaction_id' => '3AB45678CD901234G',
+            'transaction_event_code' => 'T0200',
+            'transaction_initiation_date' => '2026-09-08T12:00:00Z',
+            'transaction_amount' => ['currency_code' => 'EUR', 'value' => '-18.00'],
+            'paypal_reference_id' => '2AB34567CD890123F',
+            'paypal_reference_id_type' => 'TXN',
+        ]);
+
+        $entries = $this->mapper()->mapConversion($conversion, $payment, 'paypal@sdwa5.org');
+
+        self::assertCount(1, $entries);
+        $entry = $entries[0];
+        self::assertSame('3AB45678CD901234G', $entry->externalEntryId);
+        self::assertSame('2AB34567CD890123F', $entry->externalTransactionId);
+        self::assertSame('-18.00', $entry->amount);
+        self::assertSame('EUR', $entry->currency);
+        self::assertSame('debit', $entry->direction);
+        self::assertSame('2026-09-08', $entry->bookingDate);
+        self::assertSame('Erika Mustermann', $entry->counterpartyName);
+        self::assertSame('Test adapter', $entry->reference);
+        self::assertSame('T0006', $entry->transactionCode);
+        self::assertSame(BankSyncTransactionClassifier::TYPE_TRANSFER, $entry->bankEventType);
+        self::assertSame('PPL', $entry->dolibarrPaymentCode);
+        self::assertSame('paypal_fx:T0006', $entry->classificationMethod);
+        self::assertSame('shop@example.com', PayPalTransactionMapper::counterpartyEmail($entry->rawData));
+        self::assertSame('3AB45678CD901234G', $entry->rawData['fx_conversion']['transaction_info']['transaction_id']);
+    }
+
+    public function testAConversionLegOfAPendingConversionIsSkipped(): void
+    {
+        $conversion = $this->detail(['transaction_event_code' => 'T0200', 'transaction_status' => 'P']);
+
+        self::assertSame([], $this->mapper()->mapConversion($conversion, $this->detail(), 'paypal@sdwa5.org'));
+    }
+
+    public function testRecognisesCurrencyConversions(): void
+    {
+        self::assertTrue(PayPalTransactionMapper::isCurrencyConversion($this->detail(['transaction_event_code' => 'T0200'])));
+        self::assertFalse(PayPalTransactionMapper::isCurrencyConversion($this->detail(['transaction_event_code' => 'T0006'])));
+    }
+
     private function mapper(): PayPalTransactionMapper
     {
         return new PayPalTransactionMapper(new PayPalEventMapper(), 'Europe/Vienna');
