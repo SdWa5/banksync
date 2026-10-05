@@ -64,17 +64,33 @@ class PayPalApiProvider implements BankDataProviderInterface
         $statement->periodStart = $from->setTimezone($local)->format('Y-m-d');
         $statement->periodEnd = $to->setTimezone($local)->format('Y-m-d');
 
+        $details = $client->transactions($from, $to);
+        $byId = [];
+        foreach ($details as $detail) {
+            $id = trim((string) ($detail['transaction_info']['transaction_id'] ?? ''));
+            if ('' !== $id) {
+                $byId[$id] = $detail;
+            }
+        }
+
         $skippedCurrency = 0;
         $skippedStatus = 0;
         $skippedRange = 0;
-        foreach ($client->transactions($from, $to) as $detail) {
+        $pairedConversions = 0;
+        foreach ($details as $detail) {
             // PayPal filters by window already. Checking again keeps anything before the cutover out
             // even if the API ever returns more than was asked for.
             if (!self::withinRange($detail, $from, $to)) {
                 ++$skippedRange;
                 continue;
             }
-            $entries = $mapper->map($detail, $accountNumber);
+            $payment = self::convertedPayment($detail, $byId, $currency);
+            if (null !== $payment) {
+                ++$pairedConversions;
+                $entries = $mapper->mapConversion($detail, $payment, $accountNumber);
+            } else {
+                $entries = $mapper->map($detail, $accountNumber);
+            }
             if ([] === $entries) {
                 ++$skippedStatus;
                 continue;
@@ -92,9 +108,38 @@ class PayPalApiProvider implements BankDataProviderInterface
             'skipped_other_currency' => $skippedCurrency,
             'skipped_pending_or_denied' => $skippedStatus,
             'skipped_outside_range' => $skippedRange,
+            'paired_currency_conversions' => $pairedConversions,
         ];
 
         return $statement;
+    }
+
+    /**
+     * Returns the foreign-currency payment a conversion in the account's currency belongs to, or
+     * null when the transaction is no such conversion or its payment is not among the fetched ones.
+     * An unpaired conversion is staged as it is and waits in the queue as `other`.
+     *
+     * @param array<string, mixed>                $detail
+     * @param array<string, array<string, mixed>> $byId
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function convertedPayment(array $detail, array $byId, string $currency): ?array
+    {
+        $info = $detail['transaction_info'] ?? [];
+        if (!PayPalTransactionMapper::isCurrencyConversion($detail)
+            || $currency !== strtoupper((string) ($info['transaction_amount']['currency_code'] ?? ''))
+            || 'TXN' !== strtoupper((string) ($info['paypal_reference_id_type'] ?? ''))) {
+            return null;
+        }
+
+        $payment = $byId[trim((string) ($info['paypal_reference_id'] ?? ''))] ?? null;
+        if (null === $payment || PayPalTransactionMapper::isCurrencyConversion($payment)
+            || $currency === strtoupper((string) ($payment['transaction_info']['transaction_amount']['currency_code'] ?? ''))) {
+            return null;
+        }
+
+        return $payment;
     }
 
     /**

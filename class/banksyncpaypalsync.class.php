@@ -12,7 +12,9 @@ require_once __DIR__.'/provider/paypalapiprovider.class.php';
  * - BANKSYNC_PAYPAL_CREDENTIALS_FILE, the JSON file with client_id and client_secret
  * - BANKSYNC_PAYPAL_ACCOUNT_NUMBER, the source account key, for example the account's e-mail
  * - BANKSYNC_PAYPAL_CUTOVER_DATE (Y-m-d), nothing before this day is ever fetched
- * - BANKSYNC_PAYPAL_LOOKBACK_DAYS, how far back each run looks, 14 by default
+ * - BANKSYNC_PAYPAL_LOOKBACK_DAYS, how far before the end of the last successful run each run starts,
+ *   14 by default, because PayPal publishes a transaction up to three hours late
+ * - BANKSYNC_PAYPAL_SYNCED_UNTIL, written by the job, the end of the last window it staged (ATOM)
  * - BANKSYNC_AUTOPOST_ENABLED, posts only when set, otherwise decisions are recorded as would_post
  * - BANKSYNC_NOTIFY_EMAIL, comma-separated recipients of queue mails
  */
@@ -20,6 +22,7 @@ class BankSyncPayPalSync
 {
     public const DEFAULT_CREDENTIALS_FILE = '/run/secrets/paypal.json';
     public const DEFAULT_LOOKBACK_DAYS = 14;
+    public const SYNCED_UNTIL = 'BANKSYNC_PAYPAL_SYNCED_UNTIL';
     public const TIMEZONE = 'Europe/Vienna';
 
     /** @var DoliDB */
@@ -73,7 +76,7 @@ class BankSyncPayPalSync
             throw new RuntimeException('BANKSYNC_PAYPAL_ACCOUNT_NUMBER and BANKSYNC_PAYPAL_CUTOVER_DATE must be set.');
         }
 
-        [$from, $to] = self::range($cutover, getDolGlobalInt('BANKSYNC_PAYPAL_LOOKBACK_DAYS', self::DEFAULT_LOOKBACK_DAYS), $now);
+        [$from, $to] = self::range($cutover, getDolGlobalInt('BANKSYNC_PAYPAL_LOOKBACK_DAYS', self::DEFAULT_LOOKBACK_DAYS), $now, self::syncedUntil());
         if (null === $from) {
             return 'Cutover '.$cutover.' lies in the future, nothing fetched.';
         }
@@ -98,6 +101,11 @@ class BankSyncPayPalSync
         $importer = new BankSyncImporter($this->db, (int) $user->id, $entity);
         $import = $importer->importStatement($statement, 'paypal-api '.$from->format('Y-m-d').'..'.$to->format('Y-m-d'), self::statementHash($statement));
 
+        // Everything up to $to is staged now, so the next run may start from here even if the
+        // auto-poster below fails. admin.lib is not loaded in a cron run.
+        require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
+        dolibarr_set_const($this->db, self::SYNCED_UNTIL, $to->format(DATE_ATOM), 'chaine', 0, 'Written by BankSyncPayPalDailyJob', $entity);
+
         $dryRun = !getDolGlobalInt('BANKSYNC_AUTOPOST_ENABLED');
         $counts = (new BankSyncAutoPoster($this->db, $entity))->run($user, 'paypal', $accountNumber, $dryRun);
 
@@ -114,7 +122,7 @@ class BankSyncPayPalSync
         }
 
         return sprintf(
-            'PayPal %s..%s: %d fetched, %d staged, %d already known, %d pending or denied, %d in another currency, %d outside the window. Auto-post%s: %d posted, %d would post, %d queued, %d errors. Mail: %s.',
+            'PayPal %s..%s: %d fetched, %d staged, %d already known, %d pending or denied, %d in another currency, %d currency conversions paired, %d outside the window. Auto-post%s: %d posted, %d would post, %d queued, %d errors. Mail: %s.',
             $from->format('Y-m-d H:i'),
             $to->format('Y-m-d H:i'),
             \count($statement->transactions),
@@ -122,6 +130,7 @@ class BankSyncPayPalSync
             $import['skipped_count'],
             $statement->metadata['skipped_pending_or_denied'] ?? 0,
             $statement->metadata['skipped_other_currency'] ?? 0,
+            $statement->metadata['paired_currency_conversions'] ?? 0,
             $statement->metadata['skipped_outside_range'] ?? 0,
             $dryRun ? ' (dry run)' : '',
             $counts[BankSyncAutoPoster::DECISION_POSTED],
@@ -133,11 +142,18 @@ class BankSyncPayPalSync
     }
 
     /**
-     * The window a run fetches. It never reaches before the cutover's local midnight.
+     * The window a run fetches.
+     *
+     * It starts the look-back days before the end of the last successful run, so a job that was
+     * down for weeks catches up instead of losing what lies further back than the look-back. The
+     * first run starts at the cutover. It never reaches before the cutover's local midnight. Moving
+     * the cutover to an earlier day therefore needs BANKSYNC_PAYPAL_SYNCED_UNTIL deleted as well.
+     *
+     * @param DateTimeImmutable|null $syncedUntil End of the last staged window, null before the first run
      *
      * @return array{0: DateTimeImmutable|null, 1: DateTimeImmutable}
      */
-    public static function range(string $cutover, int $lookbackDays, DateTimeImmutable $now): array
+    public static function range(string $cutover, int $lookbackDays, DateTimeImmutable $now, ?DateTimeImmutable $syncedUntil = null): array
     {
         $local = new DateTimeZone(self::TIMEZONE);
         $start = DateTimeImmutable::createFromFormat('!Y-m-d', $cutover, $local);
@@ -145,10 +161,22 @@ class BankSyncPayPalSync
             throw new InvalidArgumentException(sprintf('Cutover date "%s" is not Y-m-d.', $cutover));
         }
 
-        $lookback = $now->modify('-'.max(1, $lookbackDays).' days');
-        $from = $lookback > $start ? $lookback : $start;
+        $from = $start;
+        if (null !== $syncedUntil) {
+            $resumeAt = $syncedUntil < $now ? $syncedUntil : $now;
+            $lookback = $resumeAt->modify('-'.max(1, $lookbackDays).' days');
+            $from = $lookback > $start ? $lookback : $start;
+        }
 
         return [$from < $now ? $from : null, $now];
+    }
+
+    private static function syncedUntil(): ?DateTimeImmutable
+    {
+        $value = trim(getDolGlobalString(self::SYNCED_UNTIL));
+        $parsed = '' !== $value ? DateTimeImmutable::createFromFormat(DATE_ATOM, $value) : false;
+
+        return false !== $parsed ? $parsed : null;
     }
 
     /**

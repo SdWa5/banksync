@@ -10,6 +10,25 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-05
+
+### Added
+
+- A payment in another currency is staged through its conversion into the account's currency, with
+  the payment's counterparty, reference and event type and the payment's transaction ID.
+- The item names of a PayPal cart are the reference when note, subject and invoice ID are empty.
+- The run summary counts paired currency conversions.
+
+### Changed
+
+- The look-back setting is labelled as counting from the end of the last run.
+
+### Fixed
+
+- A run starts the look-back days before the end of the last successful run, recorded in
+  `BANKSYNC_PAYPAL_SYNCED_UNTIL`, instead of before now, so the first run reaches the cutover and a
+  job that was down longer than the look-back loses nothing.
+
 ## [1.0.0] - 2026-10-05
 
 ### Added

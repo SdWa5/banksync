@@ -84,6 +84,66 @@ class PayPalTransactionMapper
     }
 
     /**
+     * Maps the conversion leg of a payment made or received in another currency.
+     *
+     * PayPal books such a payment as three transactions sharing one timestamp. The payment itself
+     * (e.g. T0006, -30.54 USD) and two currency conversions (T0200) that move money out of one
+     * balance (-27.42 EUR) and into the other (+30.54 USD). Both conversions name the payment in
+     * `paypal_reference_id`. Only the conversion in the account's own currency moves money that
+     * the books see, but it carries no counterparty and no reference.
+     *
+     * This returns one entry for that conversion leg, with the amount, currency and date of the
+     * conversion and the counterparty, reference and event type of the payment. Its entry ID stays
+     * the conversion's own ID, so the importer recognises it whether or not a run could pair it, and
+     * its transaction ID is the payment's, which is the one PayPal's activity list shows.
+     *
+     * @param array<string, mixed> $conversion The conversion in the account's currency
+     * @param array<string, mixed> $payment    The payment its paypal_reference_id names
+     *
+     * @return BankTransaction[] Zero or one entry
+     */
+    public function mapConversion(array $conversion, array $payment, string $accountNumber): array
+    {
+        $info = isset($conversion['transaction_info']) && \is_array($conversion['transaction_info']) ? $conversion['transaction_info'] : [];
+        $id = trim((string) ($info['transaction_id'] ?? ''));
+        if ('' === $id) {
+            throw new RuntimeException('PayPal transaction without transaction_id.');
+        }
+
+        $status = strtoupper(trim((string) ($info['transaction_status'] ?? '')));
+        if (!\in_array($status, self::IMPORTED_STATUSES, true)) {
+            return [];
+        }
+
+        $amount = $this->money($info['transaction_amount'] ?? null);
+        if (null === $amount) {
+            throw new RuntimeException(sprintf('PayPal transaction %s without transaction_amount.', $id));
+        }
+
+        $paymentInfo = isset($payment['transaction_info']) && \is_array($payment['transaction_info']) ? $payment['transaction_info'] : [];
+        $paymentId = trim((string) ($paymentInfo['transaction_id'] ?? ''));
+        $date = $this->localDate((string) ($info['transaction_initiation_date'] ?? ''), $id);
+
+        $entry = $this->entry($payment, $paymentInfo, $accountNumber, '' !== $paymentId ? $paymentId : $id, $id, $amount['value'], $amount['currency'], $date);
+        $entry->rawData = $payment + ['fx_conversion' => $conversion];
+        if ($this->eventMapper->isKnown($entry->transactionCode)) {
+            $entry->classificationMethod = 'paypal_fx:'.$entry->transactionCode;
+        }
+
+        return [$entry];
+    }
+
+    /**
+     * Tells whether a transaction is a currency conversion (event code group T02).
+     *
+     * @param array<string, mixed> $detail
+     */
+    public static function isCurrencyConversion(array $detail): bool
+    {
+        return 0 === strpos(strtoupper(trim((string) ($detail['transaction_info']['transaction_event_code'] ?? ''))), 'T02');
+    }
+
+    /**
      * Returns the counterparty's e-mail address, which the auto-post policy uses to recognise
      * members. Kept out of counterpartyAccount on purpose, because BankSync compares that field with
      * bank account numbers.
@@ -114,7 +174,7 @@ class PayPalTransactionMapper
         $transaction->transactionCode = strtoupper(trim((string) ($info['transaction_event_code'] ?? '')));
         $transaction->transactionType = trim((string) ($info['transaction_subject'] ?? ''));
         $transaction->counterpartyName = $this->counterpartyName($detail);
-        $transaction->reference = $this->reference($info);
+        $transaction->reference = $this->reference($detail, $info);
         $transaction->rawData = $detail;
         $this->eventMapper->apply($transaction);
 
@@ -122,11 +182,14 @@ class PayPalTransactionMapper
     }
 
     /**
-     * The note is what the payer typed as Mitteilung, so it carries invoice references best.
+     * The note is what the payer typed as Mitteilung, so it carries invoice references best. A shop
+     * purchase often has none of the three fields, and then the item names of the cart say what was
+     * bought.
      *
+     * @param array<string, mixed> $detail
      * @param array<string, mixed> $info
      */
-    private function reference(array $info): string
+    private function reference(array $detail, array $info): string
     {
         foreach (['transaction_note', 'transaction_subject', 'invoice_id'] as $field) {
             $value = trim((string) ($info[$field] ?? ''));
@@ -135,7 +198,15 @@ class PayPalTransactionMapper
             }
         }
 
-        return '';
+        $items = [];
+        foreach ((array) ($detail['cart_info']['item_details'] ?? []) as $item) {
+            $name = \is_array($item) ? trim((string) ($item['item_name'] ?? '')) : '';
+            if ('' !== $name) {
+                $items[] = $name;
+            }
+        }
+
+        return implode('; ', array_unique($items));
     }
 
     /**

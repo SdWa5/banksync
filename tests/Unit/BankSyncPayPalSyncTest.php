@@ -6,19 +6,46 @@ use PHPUnit\Framework\TestCase;
 
 final class BankSyncPayPalSyncTest extends TestCase
 {
-    public function testLooksBackTheConfiguredDays(): void
+    public function testTheFirstRunStartsAtTheCutover(): void
     {
         $now = new DateTimeImmutable('2026-10-05T06:00:00+02:00');
 
         [$from, $to] = BankSyncPayPalSync::range('2026-09-09', 14, $now);
 
-        self::assertSame('2026-09-21T06:00:00+02:00', $from->format(DATE_ATOM));
+        self::assertSame('2026-09-09T00:00:00+02:00', $from->format(DATE_ATOM));
         self::assertSame($now, $to);
+    }
+
+    public function testADailyRunLooksBackTheConfiguredDays(): void
+    {
+        $now = new DateTimeImmutable('2026-10-05T06:00:00+02:00');
+
+        [$from] = BankSyncPayPalSync::range('2026-09-09', 14, $now, new DateTimeImmutable('2026-10-04T06:00:00+02:00'));
+
+        self::assertSame('2026-09-20T06:00:00+02:00', $from->format(DATE_ATOM));
+    }
+
+    public function testAJobThatWasDownCatchesUp(): void
+    {
+        $now = new DateTimeImmutable('2026-12-01T06:00:00+01:00');
+
+        [$from] = BankSyncPayPalSync::range('2026-09-09', 14, $now, new DateTimeImmutable('2026-10-04T06:00:00+02:00'));
+
+        self::assertSame('2026-09-20T06:00:00+02:00', $from->format(DATE_ATOM));
+    }
+
+    public function testASyncedUntilInTheFutureCountsAsNow(): void
+    {
+        $now = new DateTimeImmutable('2026-10-05T06:00:00+02:00');
+
+        [$from] = BankSyncPayPalSync::range('2026-09-09', 14, $now, new DateTimeImmutable('2027-01-01T00:00:00+01:00'));
+
+        self::assertSame('2026-09-21T06:00:00+02:00', $from->format(DATE_ATOM));
     }
 
     public function testNeverReachesBeforeTheCutover(): void
     {
-        [$from] = BankSyncPayPalSync::range('2026-09-09', 14, new DateTimeImmutable('2026-09-15T06:00:00+02:00'));
+        [$from] = BankSyncPayPalSync::range('2026-09-09', 14, new DateTimeImmutable('2026-09-15T06:00:00+02:00'), new DateTimeImmutable('2026-09-14T06:00:00+02:00'));
 
         self::assertSame('2026-09-09T00:00:00+02:00', $from->format(DATE_ATOM));
     }
