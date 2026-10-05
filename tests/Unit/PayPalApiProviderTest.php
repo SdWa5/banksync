@@ -22,6 +22,7 @@ final class PayPalApiProviderTest extends TestCase
             $tx('A', 'S', 'EUR', '25.00', '-0.85'),
             $tx('B', 'P', 'EUR', '-5.00'),
             $tx('C', 'S', 'USD', '-9.99'),
+            ['transaction_info' => ['transaction_initiation_date' => '2026-09-01T10:00:00+0000'] + $tx('D', 'S', 'EUR', '-1.00')['transaction_info']],
         ]]);
         $responses = [['status' => 200, 'body' => '{"access_token":"tok"}'], ['status' => 200, 'body' => $page]];
         $client = new PayPalApiClient('id', 'secret', 'https://api.example', static function () use (&$responses): array {
@@ -43,7 +44,7 @@ final class PayPalApiProviderTest extends TestCase
         self::assertSame(['A', 'A/fee'], array_map(static function (BankTransaction $t): string {
             return $t->externalEntryId;
         }, $statement->transactions));
-        self::assertSame(['skipped_other_currency' => 1, 'skipped_pending_or_denied' => 1], $statement->metadata);
+        self::assertSame(['skipped_other_currency' => 1, 'skipped_pending_or_denied' => 1, 'skipped_outside_range' => 1], $statement->metadata);
     }
 
     public function testRequiresItsContext(): void

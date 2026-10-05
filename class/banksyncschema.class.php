@@ -114,6 +114,23 @@ class BankSyncSchema
             ." tms TIMESTAMP\n"
             .") ENGINE=innodb");
 
+        // Latest automatic decision per transaction: the queue reason or the audit of an automatic posting.
+        self::query($db, "CREATE TABLE IF NOT EXISTS {$prefix}banksync_autopost (\n"
+            ." rowid INTEGER AUTO_INCREMENT PRIMARY KEY,\n"
+            ." entity INTEGER DEFAULT 1 NOT NULL,\n"
+            ." fk_transaction INTEGER NOT NULL,\n"
+            ." decision VARCHAR(32) NOT NULL,\n"
+            ." reason VARCHAR(64) NOT NULL,\n"
+            ." detail TEXT,\n"
+            ." notified INTEGER DEFAULT 0 NOT NULL,\n"
+            ." date_creation DATETIME NOT NULL,\n"
+            ." date_decision DATETIME NOT NULL,\n"
+            ." fk_user INTEGER,\n"
+            ." tms TIMESTAMP\n"
+            .") ENGINE=innodb");
+        self::ensureIndex($db, $prefix.'banksync_autopost', 'uk_banksync_autopost_transaction',
+            'UNIQUE KEY uk_banksync_autopost_transaction (entity, fk_transaction)');
+
         self::ensureColumn($db, $prefix.'banksync_import', 'fk_banksync_account', 'INTEGER NULL');
         self::ensureColumn($db, $prefix.'banksync_transaction', 'fk_banksync_account', 'INTEGER NULL');
         self::ensureColumn($db, $prefix.'banksync_transaction', 'bank_event_type', 'VARCHAR(32) NULL');
