@@ -8,7 +8,7 @@
 $finder = (new PhpCsFixer\Finder())
     ->in(__DIR__)
     ->exclude('vendor')
-    ->path(['#^class/provider/paypal#', '#^class/banksyncautopost#', '#^class/banksyncqueuenotifier#', '#^class/banksyncpaypalsync#', '#^tests/Unit/#', '#^tests/bootstrap\.php$#']);
+    ->path(['#^class/provider/paypal#', '#^class/banksyncautopost#', '#^class/banksyncqueuenotifier#', '#^class/banksyncpaypalsync#', '#^class/banksyncbelegstore#', '#^class/banksyncsupplierinvoicefactory#', '#^core/boxes/box_banksync#', '#^belege\.php$#', '#^tests/Unit/#', '#^tests/bootstrap\.php$#']);
 
 return (new PhpCsFixer\Config())
     ->setRules(['@Symfony' => true])

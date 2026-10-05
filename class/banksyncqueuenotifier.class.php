@@ -66,6 +66,8 @@ class BankSyncQueueNotifier
         if ('' === trim($recipients)) {
             return null;
         }
+        // dolibarr_set_const() lives here, and a scheduled run does not load it.
+        require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 
         $new = $this->count('notified = 0');
         $open = $this->count('1 = 1');

@@ -6,7 +6,8 @@
  * Read-only client for PayPal's Transaction Search and Balances APIs.
  *
  * The HTTP transport is a callable so tests can replace it. Its signature is
- * `function (string $method, string $url, array $headers, string $body): array{status: int, body: string}`.
+ * `function (string $method, string $url, array $headers, string $body): array{status: int, body: string, error?: string}`,
+ * where status 0 means no response arrived and error says why.
  * Without one, Dolibarr's getURLContent() is used, so the module adds no dependency.
  *
  * The client never logs or returns the client secret or the access token.
@@ -199,6 +200,9 @@ class PayPalApiClient
     {
         $result = \call_user_func($this->http, $method, $url, $headers, $body);
         $status = (int) ($result['status'] ?? 0);
+        if (0 === $status) {
+            throw new RuntimeException(sprintf('PayPal %s %s was not reachable (%s).', $method, parse_url($url, PHP_URL_PATH), (string) ($result['error'] ?? 'no response')));
+        }
         $decoded = json_decode((string) ($result['body'] ?? ''), true);
 
         if ($status < 200 || $status >= 300) {
@@ -217,7 +221,7 @@ class PayPalApiClient
      *
      * @param string[] $headers
      *
-     * @return array{status: int, body: string}
+     * @return array{status: int, body: string, error: string}
      */
     public static function dolibarrTransport(string $method, string $url, array $headers, string $body): array
     {
@@ -228,6 +232,7 @@ class PayPalApiClient
         return [
             'status' => (int) ($result['http_code'] ?? 0),
             'body' => (string) ($result['content'] ?? ''),
+            'error' => (string) ($result['curl_error_msg'] ?? ''),
         ];
     }
 }

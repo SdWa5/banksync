@@ -30,7 +30,7 @@ function banksyncAllowedEventTypes()
 
 function banksyncAllowedStatuses()
 {
-    return array('new', 'partially_matched', 'matched', 'posted', 'ignored', 'error');
+    return array('queue', 'new', 'partially_matched', 'matched', 'posted', 'ignored', 'error');
 }
 
 function banksyncFilterKeys()
@@ -89,6 +89,7 @@ function banksyncTransactionStatusPresentation($langs, $status)
         case 'posted': return array('class' => 'badge-status6', 'label' => $langs->trans('BankSyncTransactionStatus_posted'));
         case 'ignored': return array('class' => 'badge-status0', 'label' => $langs->trans('BankSyncTransactionStatus_ignored'));
         case 'error': return array('class' => 'badge-status8', 'label' => $langs->trans('BankSyncTransactionStatus_error'));
+        case 'queue': return array('class' => 'badge-status1', 'label' => $langs->trans('BankSyncTransactionStatus_queue'));
         default: return array('class' => 'badge-status0', 'label' => $langs->trans('BankSyncTransactionStatus_new'));
     }
 }
@@ -186,7 +187,12 @@ if (!empty($filters['filter_event_type'])) $where[] = "t.bank_event_type = '".$d
 if (!empty($filters['filter_code'])) $where[] = "t.transaction_code LIKE '%".$db->escape($filters['filter_code'])."%'";
 if (!empty($filters['filter_counterparty'])) $where[] = "t.counterparty_name LIKE '%".$db->escape($filters['filter_counterparty'])."%'";
 if (!empty($filters['filter_reference'])) $where[] = "t.reference LIKE '%".$db->escape($filters['filter_reference'])."%'";
-if (!empty($filters['filter_status'])) $where[] = "t.status = '".$db->escape($filters['filter_status'])."'";
+// "queue" is not a stored status: it is every open transaction the auto-poster left for a person.
+if (!empty($filters['filter_status']) && $filters['filter_status'] === 'queue') {
+    $where[] = "t.status IN ('new', 'matched', 'partially_matched') AND EXISTS (SELECT 1 FROM ".$db->prefix()."banksync_autopost AS apq WHERE apq.fk_transaction = t.rowid AND apq.entity = t.entity AND apq.decision IN ('queued', 'error'))";
+} elseif (!empty($filters['filter_status'])) {
+    $where[] = "t.status = '".$db->escape($filters['filter_status'])."'";
+}
 $whereSql = implode(' AND ', $where);
 
 $totalRows = 0;
@@ -206,10 +212,12 @@ $sql .= ' t.counterparty_name, t.counterparty_account, t.reference, t.external_t
 $sql .= ' t.bank_event_type, t.dolibarr_payment_code, t.classification_confidence, t.classification_method, t.fk_bank,';
 $sql .= ' a.source_account_number, a.mapping_status, a.fk_bank_account,';
 $sql .= ' ba.label AS bank_account_label, ba.ref AS bank_account_ref,';
-$sql .= ' bm.rowid AS match_id, bm.target_type AS match_target_type, bm.confidence AS match_confidence, bm.status AS match_status, bm.match_method AS match_method';
+$sql .= ' bm.rowid AS match_id, bm.target_type AS match_target_type, bm.confidence AS match_confidence, bm.status AS match_status, bm.match_method AS match_method,';
+$sql .= ' ap.decision AS autopost_decision, ap.reason AS autopost_reason, ap.detail AS autopost_detail';
 $sql .= ' FROM '.$db->prefix().'banksync_transaction AS t';
 $sql .= ' LEFT JOIN '.$db->prefix().'banksync_account AS a ON a.rowid = t.fk_banksync_account';
 $sql .= ' LEFT JOIN '.$db->prefix().'bank_account AS ba ON ba.rowid = a.fk_bank_account';
+$sql .= ' LEFT JOIN '.$db->prefix().'banksync_autopost AS ap ON ap.fk_transaction = t.rowid AND ap.entity = t.entity';
 $sql .= ' LEFT JOIN '.$db->prefix().'banksync_match AS bm ON bm.rowid = (';
 $sql .= ' SELECT bm2.rowid FROM '.$db->prefix().'banksync_match AS bm2';
 $sql .= ' WHERE bm2.entity = t.entity AND bm2.fk_transaction = t.rowid';
@@ -307,9 +315,14 @@ if ($resql) {
         } else {
             print '<a onclick="'.dol_escape_htmltag($rememberReturn).'" href="'.dol_escape_htmltag($reconcileUrl).'">'.$langs->trans('BankSyncFindCandidates').'</a>';
         }
+        print '<br><a class="small" href="'.dol_escape_htmltag(dol_buildpath('/banksync/belege.php', 1).'?mainmenu=bank&leftmenu=banksync_transactions&id='.(int) $obj->rowid).'">'.$langs->trans('BankSyncBelege').'</a>';
         print '</td><td>';
         $sp = banksyncTransactionStatusPresentation($langs, (string) $obj->status);
         print '<span class="badge '.dol_escape_htmltag($sp['class']).'">'.dol_escape_htmltag($sp['label']).'</span>';
+        if (!empty($obj->autopost_reason)) {
+            print '<br><span class="small'.(in_array((string) $obj->autopost_decision, array('queued', 'error'), true) ? ' warning' : ' opacitymedium').'" title="'.dol_escape_htmltag((string) $obj->autopost_detail).'">';
+            print dol_escape_htmltag($langs->trans('BankSyncAutoDecision_'.$obj->autopost_decision).': '.$langs->trans((string) $obj->autopost_reason)).'</span>';
+        }
         print '</td></tr>';
     }
     $db->free($resql);
