@@ -43,7 +43,7 @@ class modBankSync extends DolibarrModules
             'moduleforexternal' => 0,
         );
 
-        $this->dirs = array('/banksync/temp');
+        $this->dirs = array('/banksync/temp', '/banksync/inbox', '/banksync/transaction');
         $this->config_page_url = array('setup.php@banksync');
         $this->hidden = false;
         $this->depends = array();
@@ -54,6 +54,10 @@ class modBankSync extends DolibarrModules
         $this->need_dolibarr_version = array(19, 0);
         $this->need_javascript_ajax = 0;
         $this->const = array();
+
+        $this->boxes = array(
+            0 => array('file' => 'box_banksync_queue.php@banksync', 'note' => 'BankSyncBoxQueue', 'enabledbydefaulton' => 'Home'),
+        );
 
         // Daily PayPal fetch. Created disabled; it is switched on in Setup > Scheduled jobs once the
         // PayPal settings are filled in and a manual run has been reviewed.
@@ -177,6 +181,21 @@ class modBankSync extends DolibarrModules
             'position' => 94,
             'enabled' => "isModEnabled('banksync')",
             'perms' => '$user->hasRight("banksync", "import")',
+            'target' => '',
+            'user' => 0,
+        );
+
+        $this->menu[$r++] = array(
+            'fk_menu' => 'fk_mainmenu=bank,fk_leftmenu=banksync',
+            'type' => 'left',
+            'titre' => 'BankSyncBelegInboxMenu',
+            'mainmenu' => 'bank',
+            'leftmenu' => 'banksync_belege',
+            'url' => '/banksync/belege.php?mainmenu=bank&leftmenu=banksync_belege',
+            'langs' => 'banksync@banksync',
+            'position' => 95,
+            'enabled' => "isModEnabled('banksync')",
+            'perms' => '$user->hasRight("banksync", "read")',
             'target' => '',
             'user' => 0,
         );

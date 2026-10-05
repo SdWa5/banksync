@@ -100,6 +100,13 @@ final class PayPalApiClientTest extends TestCase
         }
     }
 
+    public function testNamesTheTransportErrorWhenNothingAnswered(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PayPal POST /v1/oauth2/token was not reachable (Could not resolve host).');
+        $this->client([['status' => 0, 'body' => '', 'error' => 'Could not resolve host']])->authenticate();
+    }
+
     public function testRejectsATokenResponseWithoutToken(): void
     {
         $this->expectException(RuntimeException::class);

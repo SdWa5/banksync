@@ -19,6 +19,7 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 - A PayPal fee becomes its own entry with the suffix `/fee`, so it posts as a bank fee.
 - Pending and denied PayPal transactions, other currencies and entries outside the requested
   window are skipped and counted.
+- A PayPal connection error names curl's reason instead of HTTP status 0.
 - Auto-post policy that posts PayPal fees, payments the matcher confirmed against exactly one
   supplier invoice, and reimbursements whose reference names supplier invoices adding up to the
   amount. Everything else stays queued with a reason.
@@ -29,6 +30,14 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 - Dry-run mode, on by default, that records what would be posted without posting.
 - Queue mail for new items with reminders at doubling intervals from 3 to 30 days.
 - PayPal settings, a connection test and a manual run on the setup page.
+- Queue filter on the transaction list and the automatic decision with its reason under each
+  status.
+- Belege page per transaction with upload, download and attaching them to the matched supplier
+  invoice.
+- "Create supplier invoice from transaction", which creates and validates the invoice, attaches the
+  Belege, confirms the match and can post the payment in the same step.
+- Belege inbox for receipts whose payment is not known yet, with assignment to a transaction.
+- Home-page box listing the queue and the inbox count.
 - PHPUnit suite in `tests/Unit`, run with `composer test`.
 - php-cs-fixer config applying Symfony rules to the files this fork adds.
 

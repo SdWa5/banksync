@@ -31,6 +31,9 @@ class BankSyncPayPalSync
     /** @var string Read by Dolibarr's cron runner */
     public $error = '';
 
+    /** @var string[] Read by Dolibarr's cron runner */
+    public $errors = [];
+
     /** @var callable|null Test seam for the PayPal HTTP transport */
     private $http;
 
@@ -55,6 +58,7 @@ class BankSyncPayPalSync
             return 0;
         } catch (Throwable $e) {
             $this->error = $e->getMessage();
+            $this->errors = [$e->getMessage()];
             dol_syslog('BankSyncPayPalSync: '.$e->getMessage(), LOG_ERR);
 
             return 1;
