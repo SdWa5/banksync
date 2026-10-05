@@ -30,7 +30,8 @@ looked up in PayPal's activity list and the other way round.
 | `T03xx` bank deposits, `T04xx` bank withdrawals | `internal_transfer` | `VIR` |
 | `T11xx` reversals and refunds | `refund` | `PPL` |
 | `T20xx` transfers between balances | `internal_transfer` | `PPL` |
-| anything else | `other` | none, never posted |
+| `T02xx` currency conversion of a foreign-currency payment | that of the payment | that of the payment |
+| anything else, including a conversion without its payment | `other` | none, never posted |
 
 Only status `S` (completed) and `V` (reversed) is staged. A pending transaction (`P`) is staged by
 a later run once it completes, and a denied one (`D`) never moved money. Transactions in another
@@ -38,7 +39,28 @@ currency than the configured one are skipped and counted.
 
 The booking date is the local date in Europe/Vienna of `transaction_initiation_date`. The
 reference is the first non-empty field of `transaction_note` (what the payer typed),
-`transaction_subject` and `invoice_id`. The counterparty is taken from `payer_info`.
+`transaction_subject` and `invoice_id`, and failing all three the item names of `cart_info`, which is
+all a shop purchase usually carries. The counterparty is taken from `payer_info`, which for an
+outgoing payment is the recipient, as measured against the live API on 2026-10-05.
+
+### Payments in another currency
+
+PayPal books a purchase in USD paid from the EUR balance as three transactions with one timestamp,
+measured on 2026-10-05 for a purchase of 2026-09-08.
+
+| Event code | Amount | `paypal_reference_id` |
+|---|---|---|
+| `T0006` payment | -30.54 USD | |
+| `T0200` conversion | -27.42 EUR | the payment's ID |
+| `T0200` conversion | +30.54 USD | the payment's ID |
+
+Only the EUR conversion moves money the books see, but it carries neither counterparty nor
+reference. The provider therefore stages it as one entry with the conversion's amount and date and
+the payment's counterparty, reference and event type. Its entry ID is the conversion's ID, so it is
+recognised as a duplicate whether a run paired it or not, and its transaction ID, which ends up in
+`num_chq`, is the payment's, the one PayPal's activity list shows. The two USD transactions are
+skipped as another currency. A conversion whose payment is not among the fetched transactions, such
+as a manual conversion of the balance, is staged as `other` and waits in the queue.
 
 ## The auto-post policy
 
@@ -58,9 +80,8 @@ decision, its reason code and detail. For a posted transaction that row is the a
 the automatic posting, next to the `llx_banksync_posting` record BankSync writes for every posting.
 
 The reference pattern defaults to Dolibarr's supplier invoice numbering (`SI` + `yymm-nnnn`). The
-recipient check is deliberately strict. Which party PayPal reports in `payer_info` for an outgoing
-payment has not been measured against the live API yet. If it turns out to be the paying account
-itself, reimbursements stay in the queue until that is adjusted.
+recipient check is deliberately strict, and it works because PayPal reports the recipient of an
+outgoing payment in `payer_info`.
 
 ## The queue
 
@@ -109,16 +130,20 @@ days. A mail about new items resets that interval, and an empty queue sends noth
 3. In BankSync setup, fill in the path of that file, the account key (for example the account's
    e-mail address), the cutover date, the look-back days and the mail recipients. Use
    "Test PayPal connection", which shows the current balance on success.
-4. "Run PayPal sync now" stages everything since the cutover date. The new source account appears
+4. "Run PayPal sync now" stages everything since the cutover date, because the first run starts
+   there. The new source account appears
    under BankSync accounts and has to be mapped to the Dolibarr bank account once. Run it again,
    then review the `would_post` decisions in the transaction list.
 5. Switch on "Post automatically", and enable the job `BankSyncPayPalDailyJob` under Setup →
    Scheduled jobs. It is created disabled.
 
 Nothing before the cutover date is ever fetched, and the provider drops anything outside the
-requested window even if the API returns it. PayPal makes transactions available within about
-three hours, and each run looks back 14 days by default, so a late transaction is picked up by a
-later run.
+requested window even if the API returns it. Each run records the end of its window in
+`BANKSYNC_PAYPAL_SYNCED_UNTIL`, and the next run starts the look-back days (14 by default) before
+that point. PayPal makes transactions available within about three hours, so a late transaction is
+picked up by a later run, and a job that was down for weeks catches up rather than skipping the
+gap. Moving the cutover to an earlier day needs `BANKSYNC_PAYPAL_SYNCED_UNTIL` deleted as well, or
+the next run will not reach back that far.
 
 ## Settings
 
@@ -127,7 +152,8 @@ later run.
 | `BANKSYNC_PAYPAL_CREDENTIALS_FILE` | path of the credentials JSON | `/run/secrets/paypal.json` |
 | `BANKSYNC_PAYPAL_ACCOUNT_NUMBER` | source account key | none, required |
 | `BANKSYNC_PAYPAL_CUTOVER_DATE` | first day ever fetched, `Y-m-d` | none, required |
-| `BANKSYNC_PAYPAL_LOOKBACK_DAYS` | days each run looks back | 14 |
+| `BANKSYNC_PAYPAL_LOOKBACK_DAYS` | days before the end of the last run where the next run starts | 14 |
+| `BANKSYNC_PAYPAL_SYNCED_UNTIL` | end of the last staged window, written by the job | none, the first run starts at the cutover |
 | `BANKSYNC_AUTOPOST_ENABLED` | post instead of recording `would_post` | off |
 | `BANKSYNC_NOTIFY_EMAIL` | comma-separated queue mail recipients | none, no mail |
 
