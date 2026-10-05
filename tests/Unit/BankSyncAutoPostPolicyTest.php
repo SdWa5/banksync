@@ -160,6 +160,83 @@ final class BankSyncAutoPostPolicyTest extends TestCase
         self::assertSame(BankSyncAutoPostPolicy::REASON_MIXED_THIRDPARTIES, $decision['reason']);
     }
 
+    public function testPostsAConfirmedTransfer(): void
+    {
+        $decision = (new BankSyncAutoPostPolicy())->decide($this->tx(), [['target_type' => 'internal_transfer', 'allocated_amount' => '49.90']], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::ACTION_POST, $decision['action']);
+        self::assertSame(BankSyncAutoPostPolicy::REASON_CONFIRMED_MATCH, $decision['reason']);
+    }
+
+    public function testPostsAPaymentToAMappedCounterpartyAsTransfer(): void
+    {
+        $policy = new BankSyncAutoPostPolicy(BankSyncAutoPostPolicy::DEFAULT_REFERENCE_PATTERN, ['Member@Example.org' => 3]);
+        $decision = $policy->decide($this->tx(['counterparty_email' => ' member@example.ORG ']), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::ACTION_POST_TRANSFER, $decision['action']);
+        self::assertSame(BankSyncAutoPostPolicy::REASON_TRANSFER, $decision['reason']);
+        self::assertSame([3 => '49.90'], $decision['allocations']);
+        self::assertSame('member@example.org', $decision['detail']);
+    }
+
+    public function testTheTransferRuleWinsOverInvoiceReferences(): void
+    {
+        $policy = new BankSyncAutoPostPolicy(BankSyncAutoPostPolicy::DEFAULT_REFERENCE_PATTERN, ['member@example.org' => 3]);
+        $decision = $policy->decide($this->tx(['counterparty_email' => 'member@example.org']), [], ['SI2610-0003' => $this->invoice(11, 'SI2610-0003', '49.90')]);
+
+        self::assertSame(BankSyncAutoPostPolicy::ACTION_POST_TRANSFER, $decision['action']);
+    }
+
+    public function testAConfirmedMatchWinsOverTheTransferRule(): void
+    {
+        $policy = new BankSyncAutoPostPolicy(BankSyncAutoPostPolicy::DEFAULT_REFERENCE_PATTERN, ['member@example.org' => 3]);
+        $decision = $policy->decide($this->tx(['counterparty_email' => 'member@example.org']), [['target_type' => 'supplier_invoice', 'allocated_amount' => '49.90']], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::REASON_CONFIRMED_MATCH, $decision['reason']);
+    }
+
+    public function testQueuesIncomingMoneyFromAMappedCounterparty(): void
+    {
+        $policy = new BankSyncAutoPostPolicy(BankSyncAutoPostPolicy::DEFAULT_REFERENCE_PATTERN, ['member@example.org' => 3]);
+        $decision = $policy->decide($this->tx(['direction' => 'credit', 'amount' => '49.90', 'counterparty_email' => 'member@example.org']), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::REASON_INCOMING, $decision['reason']);
+    }
+
+    public function testDoesNotMatchTheTransferRuleByName(): void
+    {
+        $policy = new BankSyncAutoPostPolicy(BankSyncAutoPostPolicy::DEFAULT_REFERENCE_PATTERN, ['member@example.org' => 3]);
+        $decision = $policy->decide($this->tx(['counterparty_name' => 'member@example.org']), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::REASON_NO_MATCH, $decision['reason']);
+    }
+
+    public function testParsesTransferAccounts(): void
+    {
+        $setting = " Member@Example.org = 3,\nother@example.org=12\r\n\n";
+
+        self::assertSame(['member@example.org' => 3, 'other@example.org' => 12], BankSyncAutoPostPolicy::parseTransferAccounts($setting));
+        self::assertSame([], BankSyncAutoPostPolicy::parseTransferAccounts(''));
+    }
+
+    /**
+     * @dataProvider invalidTransferAccounts
+     */
+    public function testRejectsInvalidTransferAccounts(string $setting): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        BankSyncAutoPostPolicy::parseTransferAccounts($setting);
+    }
+
+    public function invalidTransferAccounts(): iterable
+    {
+        yield 'no account' => ['member@example.org'];
+        yield 'account zero' => ['member@example.org=0'];
+        yield 'account not a number' => ['member@example.org=PayPal'];
+        yield 'not an address' => ['member=3'];
+        yield 'address twice' => ['member@example.org=3, MEMBER@example.org=4'];
+    }
+
     public function testExtractsDistinctReferences(): void
     {
         $refs = (new BankSyncAutoPostPolicy())->extractInvoiceRefs('Auslagen si2610-0003, SI2610-0007 und SI2610-0003; RE-1001');

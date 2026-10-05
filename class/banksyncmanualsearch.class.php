@@ -37,6 +37,8 @@ class BankSyncManualSearch
                 return $this->searchSocialContributions($transaction, $query, $limit);
             case BankSyncMatchManager::TARGET_VAT:
                 return $this->searchVatDeclarations($transaction, $query, $limit);
+            case BankSyncMatchManager::TARGET_INTERNAL_TRANSFER:
+                return $this->bankAccountRows($transaction, $this->textFilter($query, array('ref', 'label')), $limit);
             default:
                 return array();
         }
@@ -62,6 +64,10 @@ class BankSyncManualSearch
                 $sql .= ' FROM '.$this->db->prefix().'facture_fourn AS f INNER JOIN '.$this->db->prefix().'societe AS s ON s.rowid = f.fk_soc';
                 $sql .= ' WHERE f.entity = '.$this->entity.' AND f.rowid = '.$targetId.' LIMIT 1';
                 return $this->fetchInvoiceTarget($sql, BankSyncMatchManager::TARGET_SUPPLIER_INVOICE, '/fourn/facture/card.php?facid=', 'ref_supplier');
+
+            case BankSyncMatchManager::TARGET_INTERNAL_TRANSFER:
+                $rows = $this->bankAccountRows(null, ' AND rowid = '.$targetId, 1, false);
+                return $rows ? $rows[0] : null;
 
             case BankSyncMatchManager::TARGET_SALARY:
                 $sql = 'SELECT s.rowid, s.ref, s.datep AS payment_date, s.datesp AS period_start, s.dateep AS period_end, s.amount, s.label, u.firstname, u.lastname,';
@@ -199,6 +205,38 @@ class BankSyncManualSearch
             'remaining_amount' => $this->decimal($remaining),
             'url' => $urlPrefix.(int) $obj->rowid,
         );
+    }
+
+    /**
+     * The books' other bank accounts as transfer targets. A transfer always takes the whole amount,
+     * so the remaining amount shown is the transaction's.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function bankAccountRows($transaction, $filter, $limit, $openOnly = true)
+    {
+        $sql = 'SELECT rowid, ref, label FROM '.$this->db->prefix().'bank_account';
+        $sql .= ' WHERE entity = '.$this->entity.$filter;
+        if ($openOnly) $sql .= ' AND clos = 0';
+        if ($transaction !== null && !empty($transaction->fk_bank_account)) $sql .= ' AND rowid <> '.((int) $transaction->fk_bank_account);
+        $sql .= ' ORDER BY label ASC'.$this->db->plimit((int) $limit, 0);
+        $rows = array();
+        $resql = $this->db->query($sql);
+        if (!$resql) return $rows;
+        $amount = $transaction !== null ? abs((float) $transaction->amount) : 0.0;
+        while ($obj = $this->db->fetch_object($resql)) {
+            $rows[] = array(
+                'target_type' => BankSyncMatchManager::TARGET_INTERNAL_TRANSFER,
+                'target_id' => (int) $obj->rowid,
+                'ref' => (string) $obj->ref,
+                'label' => (string) $obj->label,
+                'date' => '',
+                'remaining_amount' => $this->decimal($amount),
+                'url' => '/compta/bank/card.php?id='.(int) $obj->rowid,
+            );
+        }
+        $this->db->free($resql);
+        return $rows;
     }
 
     private function searchSalaries($transaction, $query, $limit)
