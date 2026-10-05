@@ -171,6 +171,7 @@ if ($canPreviewPosting) {
     if ($returnState !== '') $postingUrl .= '&return_state='.rawurlencode($returnState);
     print '<a class="butAction" href="'.dol_escape_htmltag($postingUrl).'">'.$langs->trans('BankSyncOpenPostingPreview').'</a>';
 }
+print '<a class="butAction" href="'.dol_escape_htmltag(dol_buildpath('/banksync/belege.php', 1).'?mainmenu=bank&leftmenu=banksync_transactions&id='.$transactionId).'">'.$langs->trans('BankSyncBelege').'</a>';
 if ($user->hasRight('banksync', 'import') && (string) $transaction->bank_event_type !== 'bank_fee') {
     print '<form method="POST" action="'.dol_escape_htmltag($_SERVER['PHP_SELF']).'" class="inline-block"><input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="id" value="'.$transactionId.'"><input type="hidden" name="action" value="refresh">';
     if ($returnState !== '') print '<input type="hidden" name="return_state" value="'.dol_escape_htmltag($returnState).'">';
