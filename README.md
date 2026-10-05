@@ -11,6 +11,8 @@ BankSync is a Dolibarr external module for importing, classifying, reconciling a
 - a **queue** for everything else, with the reason per transaction, Belege per transaction, a Belege inbox, "create supplier invoice from transaction", a home-page box and mail with backoff reminders;
 - a PHPUnit suite.
 
+The fork follows SemVer from 1.0.0, its first production release on erp.sdwa5.org. A minor release changes nothing a deployment relies on, so pinning the major version is safe. Deployments check out a tag.
+
 Setup, the policy and the queue are described in [docs/paypal.md](docs/paypal.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md). The fork's own files follow Symfony coding standards (`.php-cs-fixer.dist.php`), and upstream files keep their style so rebases stay cheap.
 
 ## Current status: 0.4.1

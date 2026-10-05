@@ -2,6 +2,7 @@
     "name": "sdwa5/banksync",
     "description": "Dolibarr bank statement import and reconciliation module, with a PayPal provider",
     "type": "dolibarr-module",
+    "version": "1.0.0",
     "license": "GPL-3.0-or-later",
     "require": {
         "php": ">=7.4"
