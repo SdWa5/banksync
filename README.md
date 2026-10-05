@@ -2,6 +2,19 @@
 
 BankSync is a Dolibarr external module for importing, classifying, reconciling and posting bank transactions from multiple data sources through a provider-neutral staging layer.
 
+## This fork
+
+`SdWa5/banksync` is a fork of [`vanyolai/dolibarr-banksync`](https://github.com/vanyolai/dolibarr-banksync), based on upstream commit `6c3001b` (0.5.1). It adds:
+
+- a **PayPal provider** reading the Transaction Search API, with fees as entries of their own and the PayPal transaction ID on every bank line;
+- a **daily scheduled job** that fetches PayPal from a cutover date, stages, matches and applies a narrow **auto-post policy** (fees, single confirmed supplier invoices, reimbursements whose reference names the invoices), with a dry-run default;
+- a **queue** for everything else, with the reason per transaction, Belege per transaction, a Belege inbox, "create supplier invoice from transaction", a home-page box and mail with backoff reminders;
+- a PHPUnit suite.
+
+The fork follows SemVer from 1.0.0, its first production release on erp.sdwa5.org. A minor release changes nothing a deployment relies on, so pinning the major version is safe. Deployments check out a tag.
+
+Setup, the policy and the queue are described in [docs/paypal.md](docs/paypal.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md). The fork's own files follow Symfony coding standards (`.php-cs-fixer.dist.php`), and upstream files keep their style so rebases stay cheap.
+
 ## Current status: 0.4.1
 
 The first provider is **BinX CSV**. The module currently:
@@ -30,7 +43,7 @@ The first provider is **BinX CSV**. The module currently:
 - stores a BankSync posting audit record with a unique transaction boundary so the same bank transaction cannot be posted twice;
 - never writes directly to Dolibarr core business tables when a native domain API exists.
 
-Native posting is deliberately **manual and explicit**: reconciliation does not automatically create payments. A user reviews the posting preview and then confirms the real Dolibarr operation separately.
+Native posting is deliberately **manual and explicit**: reconciliation does not automatically create payments. A user reviews the posting preview and then confirms the real Dolibarr operation separately. The only exception is this fork's auto-post policy for PayPal, which is off until it is switched on in setup.
 
 ## Repository and development model
 
@@ -288,14 +301,26 @@ Provider-specific structures must not leak into reconciliation logic. The raw so
 
 ## Development
 
-Smoke tests that do not require a Dolibarr runtime:
+Unit tests that do not require a Dolibarr runtime, run in Docker:
+
+```bash
+docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/app" -w /app composer:2 sh -c 'composer install && composer test'
+```
+
+Smoke tests from upstream:
 
 ```bash
 php tests/binx_parser_smoke.php
 php tests/classifier_smoke.php
 ```
 
-GitHub Actions also runs `php -l` against every PHP file on pushes and pull requests.
+Code style of the fork's own files:
+
+```bash
+docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/app" -w /app ghcr.io/php-cs-fixer/php-cs-fixer:3-php8.2 fix --dry-run --diff
+```
+
+GitHub Actions runs `php -l` against every PHP file and PHPUnit on PHP 7.4 and 8.2 on pushes and pull requests.
 
 ## Roadmap
 

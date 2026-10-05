@@ -499,7 +499,9 @@ class BankSyncPostingService
 
     private function bankReference($transaction)
     {
-        $value = trim((string) $transaction->reference);
+        // PayPal references are free text typed by the payer, so the transaction ID is the traceable key there.
+        $value = strpos((string) $transaction->provider, 'paypal') === 0 ? trim((string) $transaction->external_transaction_id) : '';
+        if ($value === '') $value = trim((string) $transaction->reference);
         if ($value === '') $value = trim((string) $transaction->external_transaction_id);
         if ($value === '') $value = trim((string) $transaction->external_entry_id);
         if (function_exists('mb_substr')) return mb_substr($value, 0, 50, 'UTF-8');
