@@ -256,7 +256,8 @@ BankSyncPostingCompositeSuccess=Native Dolibarr posting completed: %s related pa
 BankSyncPostingFailed=Native Dolibarr posting failed: %s
 BankSyncPostingOpenNativeObject=Open native Dolibarr object
 BankSyncPostingNativeObject=Native Dolibarr object
-BankSyncPostingBankLine=Bank line# PayPal provider, auto-posting and queue notification
+BankSyncPostingBankLine=Bank line
+# PayPal provider, auto-posting and queue notification
 BankSyncPayPal=PayPal
 BankSyncPayPalCredentialsFile=PayPal credentials file
 BankSyncPayPalCredentialsFileHelp=Path of a JSON file with client_id and client_secret, readable by the web server, for example a read-only Docker secret. The secret itself is never stored in Dolibarr.

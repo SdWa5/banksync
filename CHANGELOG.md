@@ -42,6 +42,7 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
   PHP 7.4 and 8.2. Composer resolves dependencies for PHP 7.4, the module's minimum.
 - `docs/paypal.md` and a section on this fork in `README.md`.
 - php-cs-fixer config applying Symfony rules to the files this fork adds.
+- German translation `langs/de_DE`.
 
 ### Changed
 
