@@ -23,7 +23,7 @@ class modBankSync extends DolibarrModules
         $this->name = preg_replace('/^mod/i', '', get_class($this));
         $this->description = 'BankSyncDescription';
         $this->descriptionlong = 'BankSyncDescriptionLong';
-        $this->version = '0.5.1';
+        $this->version = '1.0.0';
         $this->const_name = 'MAIN_MODULE_'.strtoupper($this->name);
         $this->picto = 'bank';
 

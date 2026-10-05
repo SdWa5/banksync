@@ -10,7 +10,7 @@
  */
 class BankSyncSchema
 {
-    const VERSION = '0.5.1';
+    const VERSION = '1.0.0';
 
     /**
      * @param DoliDB $db Database handler

@@ -10,6 +10,8 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-05
+
 ### Added
 
 - PayPal provider `paypal_api` reading the Transaction Search API in 31-day windows of 500 rows per
