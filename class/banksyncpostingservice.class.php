@@ -149,6 +149,9 @@ class BankSyncPostingService
         }
 
         $targetType = (string) $settlements[0]->target_type;
+        if ($targetType === BankSyncMatchManager::TARGET_INTERNAL_TRANSFER) {
+            return $this->buildTransferPreview($transaction, $settlements, $preview, $existingIsPosted);
+        }
         if (!in_array($targetType, array(
             BankSyncMatchManager::TARGET_CUSTOMER_INVOICE,
             BankSyncMatchManager::TARGET_SUPPLIER_INVOICE,
@@ -293,6 +296,8 @@ class BankSyncPostingService
                 $native = $this->postVatPayments($transaction, $preview, $user);
             } elseif ((string) $preview['kind'] === BankSyncMatchManager::TARGET_BANK_FEE) {
                 $native = $this->postBankFee($transaction, $preview, $user);
+            } elseif ((string) $preview['kind'] === BankSyncMatchManager::TARGET_INTERNAL_TRANSFER) {
+                $native = $this->postTransfer($transaction, $preview, $user);
             } else {
                 throw new RuntimeException('BankSyncPostingTargetNotSupportedYet');
             }
@@ -476,6 +481,120 @@ class BankSyncPostingService
         if ($payment->fetch($paymentId, $user) <= 0) throw new RuntimeException('BankSyncPostingPaymentFetchFailed');
         if ((int) $payment->fk_bank <= 0) throw new RuntimeException('BankSyncPostingBankLineCreateFailed');
         return array('native_object_type' => 'payment_various', 'native_object_id' => (int) $paymentId, 'bank_line_id' => (int) $payment->fk_bank, 'items' => array());
+    }
+
+    /**
+     * A transfer moves the whole amount between the transaction's bank account and one other
+     * account of the books, such as a member's account that holds what the association owes them.
+     *
+     * @param array<int,object>   $settlements
+     * @param array<string,mixed> $preview
+     *
+     * @return array<string,mixed>
+     */
+    private function buildTransferPreview($transaction, array $settlements, array $preview, $existingIsPosted)
+    {
+        $preview['kind'] = BankSyncMatchManager::TARGET_INTERNAL_TRANSFER;
+        if (count($settlements) !== 1) {
+            $preview['errors'][] = 'BankSyncPostingTransferSingleTarget';
+            return $preview;
+        }
+        $match = $settlements[0];
+
+        $preview['payment_code'] = trim((string) $transaction->dolibarr_payment_code);
+        if ($preview['payment_code'] !== '') {
+            $preview['payment_mode_id'] = (int) dol_getIdFromCode($this->db, $preview['payment_code'], 'c_paiement', 'code', 'id', 1);
+        }
+        if (!$existingIsPosted && $preview['payment_code'] === '') $preview['errors'][] = 'BankSyncPostingMissingPaymentCode';
+        elseif (!$existingIsPosted && $preview['payment_mode_id'] <= 0) $preview['errors'][] = 'BankSyncPostingPaymentCodeNotFound';
+
+        $other = new Account($this->db);
+        if ((int) $match->target_id <= 0 || $other->fetch((int) $match->target_id) <= 0) {
+            $preview['errors'][] = 'BankSyncPostingTransferAccountNotFound';
+            return $preview;
+        }
+        if (!$existingIsPosted) {
+            if ((int) $other->id === (int) $preview['bank_account_id']) $preview['errors'][] = 'BankSyncPostingTransferSameAccount';
+            if (!empty($other->clos)) $preview['errors'][] = 'BankSyncPostingTransferAccountClosed';
+            $otherCurrency = trim((string) $other->currency_code);
+            if ($otherCurrency !== '' && strtoupper($otherCurrency) !== strtoupper($preview['currency'])) $preview['errors'][] = 'BankSyncPostingBankCurrencyMismatch';
+        }
+
+        $outgoing = (float) $transaction->amount < 0;
+        $label = trim((string) $other->label) !== '' ? (string) $other->label : (string) $other->ref;
+        $preview['rows'][] = array(
+            'target_type' => BankSyncMatchManager::TARGET_INTERNAL_TRANSFER,
+            'target_id' => (int) $other->id,
+            'ref' => (string) $other->ref,
+            'label' => $label,
+            'thirdparty' => ($outgoing ? '→ ' : '← ').$label,
+            'allocated_amount' => (float) $match->allocated_amount,
+            'remaining_before' => null,
+            'remaining_after' => null,
+            'url' => '/compta/bank/card.php?id='.(int) $other->id,
+        );
+        $preview['postable'] = empty($preview['errors']);
+        return $preview;
+    }
+
+    /**
+     * Books the transfer the way Dolibarr's own transfer screen does, as one line on each account
+     * linked to each other, so either side leads to the other. Both lines carry the transaction's
+     * bank reference, which for PayPal is the transaction ID.
+     *
+     * @return array<string,mixed>
+     */
+    private function postTransfer($transaction, $preview, $user)
+    {
+        $own = new Account($this->db);
+        if ($own->fetch((int) $preview['bank_account_id']) <= 0) throw new RuntimeException('BankSyncPostingBankAccountNotFound');
+        $row = $preview['rows'][0];
+        $other = new Account($this->db);
+        if ($other->fetch((int) $row['target_id']) <= 0) throw new RuntimeException('BankSyncPostingTransferAccountNotFound');
+
+        $amount = abs((float) $transaction->amount);
+        $outgoing = (float) $transaction->amount < 0;
+        $from = $outgoing ? $own : $other;
+        $to = $outgoing ? $other : $own;
+        // Dolibarr's cash accounts accept nothing but cash lines, as its own transfer screen knows.
+        $type = ((int) $from->type === Account::TYPE_CASH || (int) $to->type === Account::TYPE_CASH) ? 'LIQ' : (string) $preview['payment_code'];
+        $date = $this->sqlDateToTimestamp((string) $preview['booking_date']);
+        $label = $this->transferLabel($transaction);
+        $reference = $this->bankReference($transaction);
+        $note = $this->auditNote($transaction);
+
+        $fromLine = $from->addline($date, $type, $label, -$amount, $reference, 0, $user, '', '', '', null, '', null, $note);
+        if ($fromLine <= 0) throw new RuntimeException($from->error ? $from->error : 'BankSyncPostingBankLineCreateFailed');
+        $toLine = $to->addline($date, $type, $label, $amount, $reference, 0, $user, '', '', '', null, '', null, $note);
+        if ($toLine <= 0) throw new RuntimeException($to->error ? $to->error : 'BankSyncPostingBankLineCreateFailed');
+        if ($from->add_url_line($fromLine, $toLine, DOL_URL_ROOT.'/compta/bank/line.php?rowid=', '(banktransfert)', 'banktransfert') <= 0
+            || $to->add_url_line($toLine, $fromLine, DOL_URL_ROOT.'/compta/bank/line.php?rowid=', '(banktransfert)', 'banktransfert') <= 0) {
+            throw new RuntimeException('BankSyncPostingTransferLinkFailed');
+        }
+
+        $ownLine = $outgoing ? $fromLine : $toLine;
+        $otherLine = $outgoing ? $toLine : $fromLine;
+        return array(
+            'native_object_type' => 'bank_transfer',
+            'native_object_id' => (int) $otherLine,
+            'bank_line_id' => (int) $ownLine,
+            'items' => array(array(
+                'target_type' => BankSyncMatchManager::TARGET_INTERNAL_TRANSFER,
+                'target_id' => (int) $other->id,
+                'native_object_type' => 'bank_line',
+                'native_object_id' => (int) $otherLine,
+                'bank_line_id' => (int) $otherLine,
+                'amount' => $amount,
+            )),
+        );
+    }
+
+    private function transferLabel($transaction)
+    {
+        $label = trim(trim((string) $transaction->counterparty_name).' '.trim((string) $transaction->reference));
+        if ($label === '') $label = '(banktransfert)';
+        if (function_exists('mb_substr')) return mb_substr($label, 0, 255, 'UTF-8');
+        return substr($label, 0, 255);
     }
 
     private function inferBankFeePaymentCode($transaction)

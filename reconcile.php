@@ -238,7 +238,7 @@ if ((string) $transaction->bank_event_type !== 'bank_fee') {
     print '<form method="GET" action="'.dol_escape_htmltag($_SERVER['PHP_SELF']).'"><input type="hidden" name="mainmenu" value="bank"><input type="hidden" name="leftmenu" value="banksync_transactions"><input type="hidden" name="id" value="'.$transactionId.'"><input type="hidden" name="manual_search" value="1">';
     if ($returnState !== '') print '<input type="hidden" name="return_state" value="'.dol_escape_htmltag($returnState).'">';
     print '<select name="manual_type" class="flat">';
-    $types = array(BankSyncMatchManager::TARGET_CUSTOMER_INVOICE, BankSyncMatchManager::TARGET_SUPPLIER_INVOICE, BankSyncMatchManager::TARGET_SALARY, BankSyncMatchManager::TARGET_SOCIAL_CONTRIBUTION, BankSyncMatchManager::TARGET_VAT);
+    $types = array(BankSyncMatchManager::TARGET_CUSTOMER_INVOICE, BankSyncMatchManager::TARGET_SUPPLIER_INVOICE, BankSyncMatchManager::TARGET_SALARY, BankSyncMatchManager::TARGET_SOCIAL_CONTRIBUTION, BankSyncMatchManager::TARGET_VAT, BankSyncMatchManager::TARGET_INTERNAL_TRANSFER);
     foreach ($types as $type) print '<option value="'.dol_escape_htmltag($type).'"'.($manualType === $type ? ' selected' : '').'>'.dol_escape_htmltag(banksyncTargetLabel($langs, $type)).'</option>';
     print '</select> <input type="text" class="minwidth300" name="manual_q" value="'.dol_escape_htmltag((string) $manualQuery).'" placeholder="'.dol_escape_htmltag($langs->trans('BankSyncManualSearchPlaceholder')).'"> <button type="submit" class="button">'.$langs->trans('Search').'</button></form>';
     if ($manualRequested) {

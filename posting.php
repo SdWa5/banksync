@@ -58,6 +58,7 @@ function banksyncPostingOperationLabel($langs, $kind)
         case BankSyncMatchManager::TARGET_SOCIAL_CONTRIBUTION: return $langs->trans('BankSyncPostingNativeSocialContribution');
         case BankSyncMatchManager::TARGET_VAT: return $langs->trans('BankSyncPostingNativeVatPayment');
         case BankSyncMatchManager::TARGET_BANK_FEE: return $langs->trans('BankSyncPostingNativeBankFee');
+        case BankSyncMatchManager::TARGET_INTERNAL_TRANSFER: return $langs->trans('BankSyncPostingNativeTransfer');
         default: return $langs->trans('BankSyncPostingTargetNotSupportedYet');
     }
 }
@@ -69,6 +70,7 @@ function banksyncCanNativePost($user, $kind)
     if ((string) $kind === BankSyncMatchManager::TARGET_SUPPLIER_INVOICE) return ($user->hasRight('fournisseur', 'facture', 'creer') || $user->hasRight('supplier_invoice', 'creer'));
     if ((string) $kind === BankSyncMatchManager::TARGET_SOCIAL_CONTRIBUTION || (string) $kind === BankSyncMatchManager::TARGET_VAT) return $user->hasRight('tax', 'charges', 'creer');
     if ((string) $kind === BankSyncMatchManager::TARGET_BANK_FEE) return $user->hasRight('banque', 'modifier');
+    if ((string) $kind === BankSyncMatchManager::TARGET_INTERNAL_TRANSFER) return $user->hasRight('banque', 'transfer');
     return false;
 }
 
@@ -82,6 +84,8 @@ function banksyncNativeObjectUrl($type, $id)
         case 'payment_social': return '/compta/payment_sc/card.php?id='.$id;
         case 'payment_vat': return '/compta/tva/payments.php?mode=tvaonly';
         case 'payment_various': return '/compta/bank/various_payment/card.php?id='.$id;
+        case 'bank_transfer':
+        case 'bank_line': return '/compta/bank/line.php?rowid='.$id;
         default: return '';
     }
 }

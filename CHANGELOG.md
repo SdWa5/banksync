@@ -10,6 +10,20 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-05
+
+### Added
+
+- A transaction can be posted as a transfer to another bank account of the books, booked as two
+  linked bank lines with the PayPal transaction ID on both, and as cash when either side is a cash
+  account.
+- The manual reconciliation offers the books' other open bank accounts as the target "Internal
+  transfer".
+- The setting "Recipients paid by transfer" (`BANKSYNC_TRANSFER_ACCOUNTS`) maps an e-mail address to
+  a bank account, and the auto-post policy posts an outgoing payment to a listed address as a
+  transfer to that account.
+- The auto-post policy posts a transfer a person confirmed for the full amount.
+
 ## [1.1.0] - 2026-10-05
 
 ### Added

@@ -15,6 +15,7 @@ if (!$res) {
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once __DIR__.'/../lib/banksync.lib.php';
 require_once __DIR__.'/../class/banksyncschema.class.php';
+require_once __DIR__.'/../class/banksyncautopostpolicy.class.php';
 
 $langs->load('banksync@banksync');
 
@@ -39,6 +40,14 @@ if ($action === 'save') {
         'BANKSYNC_AUTOPOST_ENABLED' => GETPOST('BANKSYNC_AUTOPOST_ENABLED', 'alpha') ? '1' : '0',
         'BANKSYNC_NOTIFY_EMAIL' => trim((string) GETPOST('BANKSYNC_NOTIFY_EMAIL', 'alphanohtml')),
     );
+    // A malformed entry would stop every automatic run, so it is refused here rather than stored.
+    $transferAccounts = trim((string) GETPOST(BankSyncAutoPostPolicy::TRANSFER_ACCOUNTS, 'nohtml'));
+    try {
+        BankSyncAutoPostPolicy::parseTransferAccounts($transferAccounts);
+        $paypalSettings[BankSyncAutoPostPolicy::TRANSFER_ACCOUNTS] = $transferAccounts;
+    } catch (InvalidArgumentException $e) {
+        setEventMessages($langs->trans('BankSyncTransferAccountsInvalid', $e->getMessage()), null, 'errors');
+    }
     foreach ($paypalSettings as $name => $value) {
         if ($resconst > 0) {
             $resconst = dolibarr_set_const($db, $name, $value, 'chaine', 0, '', (int) $conf->entity);
@@ -102,6 +111,8 @@ print '<tr class="oddeven"><td>'.$langs->trans('BankSyncPayPalLookbackDays').'</
 print '<tr class="oddeven"><td>'.$langs->trans('BankSyncAutoPostEnabled').'<br><span class="opacitymedium">'.$langs->trans('BankSyncAutoPostEnabledHelp').'</span></td>';
 print '<td><input type="checkbox" name="BANKSYNC_AUTOPOST_ENABLED" value="1"'.(getDolGlobalInt('BANKSYNC_AUTOPOST_ENABLED') ? ' checked' : '').'></td></tr>';
 print '<tr class="oddeven"><td>'.$langs->trans('BankSyncNotifyEmail').'<br><span class="opacitymedium">'.$langs->trans('BankSyncNotifyEmailHelp').'</span></td><td>'.$text('BANKSYNC_NOTIFY_EMAIL').'</td></tr>';
+print '<tr class="oddeven"><td>'.$langs->trans('BankSyncTransferAccounts').'<br><span class="opacitymedium">'.$langs->trans('BankSyncTransferAccountsHelp').'</span></td>';
+print '<td><textarea class="minwidth300" rows="3" name="'.BankSyncAutoPostPolicy::TRANSFER_ACCOUNTS.'">'.dol_escape_htmltag(getDolGlobalString(BankSyncAutoPostPolicy::TRANSFER_ACCOUNTS)).'</textarea></td></tr>';
 print '</table>';
 print '<div class="center"><button type="submit" class="button button-save">'.$langs->trans('Save').'</button></div>';
 print '</form>';
