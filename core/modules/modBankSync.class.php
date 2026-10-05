@@ -55,6 +55,25 @@ class modBankSync extends DolibarrModules
         $this->need_javascript_ajax = 0;
         $this->const = array();
 
+        // Daily PayPal fetch. Created disabled; it is switched on in Setup > Scheduled jobs once the
+        // PayPal settings are filled in and a manual run has been reviewed.
+        $this->cronjobs = array(
+            0 => array(
+                'label' => 'BankSyncPayPalDailyJob',
+                'jobtype' => 'method',
+                'class' => '/banksync/class/banksyncpaypalsync.class.php',
+                'objectname' => 'BankSyncPayPalSync',
+                'method' => 'runScheduled',
+                'parameters' => '',
+                'comment' => 'BankSyncPayPalDailyJobComment',
+                'frequency' => 1,
+                'unitfrequency' => 86400,
+                'status' => 0,
+                'test' => "isModEnabled('banksync')",
+                'priority' => 50,
+            ),
+        );
+
         if (!isModEnabled('banksync')) {
             $conf->banksync = new stdClass();
             $conf->banksync->enabled = 0;

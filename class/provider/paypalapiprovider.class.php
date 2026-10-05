@@ -66,7 +66,14 @@ class PayPalApiProvider implements BankDataProviderInterface
 
         $skippedCurrency = 0;
         $skippedStatus = 0;
+        $skippedRange = 0;
         foreach ($client->transactions($from, $to) as $detail) {
+            // PayPal filters by window already. Checking again keeps anything before the cutover out
+            // even if the API ever returns more than was asked for.
+            if (!self::withinRange($detail, $from, $to)) {
+                ++$skippedRange;
+                continue;
+            }
             $entries = $mapper->map($detail, $accountNumber);
             if ([] === $entries) {
                 ++$skippedStatus;
@@ -84,8 +91,21 @@ class PayPalApiProvider implements BankDataProviderInterface
         $statement->metadata = [
             'skipped_other_currency' => $skippedCurrency,
             'skipped_pending_or_denied' => $skippedStatus,
+            'skipped_outside_range' => $skippedRange,
         ];
 
         return $statement;
+    }
+
+    /**
+     * @param array<string, mixed> $detail
+     */
+    private static function withinRange(array $detail, DateTimeImmutable $from, DateTimeImmutable $to): bool
+    {
+        $timestamp = (string) ($detail['transaction_info']['transaction_initiation_date'] ?? '');
+        $at = DateTimeImmutable::createFromFormat(DATE_ATOM, $timestamp) ?: DateTimeImmutable::createFromFormat('Y-m-d\TH:i:sO', $timestamp);
+
+        // An unreadable date is left to the mapper, which rejects it loudly.
+        return false === $at || ($at >= $from && $at <= $to);
     }
 }

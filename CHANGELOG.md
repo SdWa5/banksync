@@ -17,7 +17,18 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 - Credentials are read from a JSON file such as a read-only Docker secret, never from the database.
 - PayPal event codes map to BankSync event types and payment codes. Unknown codes stay unpostable.
 - A PayPal fee becomes its own entry with the suffix `/fee`, so it posts as a bank fee.
-- Pending and denied PayPal transactions and other currencies are skipped and counted.
+- Pending and denied PayPal transactions, other currencies and entries outside the requested
+  window are skipped and counted.
+- Auto-post policy that posts PayPal fees, payments the matcher confirmed against exactly one
+  supplier invoice, and reimbursements whose reference names supplier invoices adding up to the
+  amount. Everything else stays queued with a reason.
+- `banksync_autopost` table holding the latest automatic decision per transaction, which is both
+  the queue reason and the audit of automatic postings.
+- Daily scheduled job `BankSyncPayPalDailyJob`, created disabled, which fetches PayPal from the
+  cutover date, stages, applies the policy and mails the queue's recipients.
+- Dry-run mode, on by default, that records what would be posted without posting.
+- Queue mail for new items with reminders at doubling intervals from 3 to 30 days.
+- PayPal settings, a connection test and a manual run on the setup page.
 - PHPUnit suite in `tests/Unit`, run with `composer test`.
 - php-cs-fixer config applying Symfony rules to the files this fork adds.
 
