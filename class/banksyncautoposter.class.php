@@ -51,7 +51,10 @@ class BankSyncAutoPoster
     {
         $this->db = $db;
         $this->entity = $entity;
-        $this->policy = $policy ?? new BankSyncAutoPostPolicy();
+        $this->policy = $policy ?? new BankSyncAutoPostPolicy(
+            BankSyncAutoPostPolicy::DEFAULT_REFERENCE_PATTERN,
+            BankSyncAutoPostPolicy::parseTransferAccounts(getDolGlobalString(BankSyncAutoPostPolicy::TRANSFER_ACCOUNTS))
+        );
         $this->matcher = new BankSyncCandidateMatcher($db, $entity);
         $this->matchManager = new BankSyncMatchManager($db, $entity);
         $this->poster = new BankSyncPostingService($db, $entity);
@@ -122,6 +125,12 @@ class BankSyncAutoPoster
             $this->matchManager->clearSuggested($id);
             foreach ($decision['allocations'] as $invoiceId => $amount) {
                 $this->matchManager->upsert($id, BankSyncMatchManager::TARGET_SUPPLIER_INVOICE, $invoiceId, $amount, 100, 'autopost_reference', 'confirmed', (int) $user->id);
+            }
+        }
+        if (BankSyncAutoPostPolicy::ACTION_POST_TRANSFER === $decision['action']) {
+            $this->matchManager->clearSuggested($id);
+            foreach ($decision['allocations'] as $accountId => $amount) {
+                $this->matchManager->upsert($id, BankSyncMatchManager::TARGET_INTERNAL_TRANSFER, $accountId, $amount, 100, 'autopost_transfer', 'confirmed', (int) $user->id);
             }
         }
 
@@ -238,9 +247,10 @@ class BankSyncAutoPoster
         if ([] === $decision['allocations']) {
             return $decision['action'];
         }
+        $target = BankSyncAutoPostPolicy::ACTION_POST_TRANSFER === $decision['action'] ? 'bank account #' : 'supplier invoice #';
         $parts = [];
-        foreach ($decision['allocations'] as $invoiceId => $amount) {
-            $parts[] = 'supplier invoice #'.$invoiceId.' '.$amount;
+        foreach ($decision['allocations'] as $id => $amount) {
+            $parts[] = $target.$id.' '.$amount;
         }
 
         return $decision['action'].': '.implode(', ', $parts);

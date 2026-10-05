@@ -7,7 +7,7 @@ BankSync is a Dolibarr external module for importing, classifying, reconciling a
 `SdWa5/banksync` is a fork of [`vanyolai/dolibarr-banksync`](https://github.com/vanyolai/dolibarr-banksync), based on upstream commit `6c3001b` (0.5.1). It adds:
 
 - a **PayPal provider** reading the Transaction Search API, with fees as entries of their own, payments in another currency staged through their conversion, and the PayPal transaction ID on every bank line;
-- a **daily scheduled job** that fetches PayPal from a cutover date, stages, matches and applies a narrow **auto-post policy** (fees, single confirmed supplier invoices, reimbursements whose reference names the invoices), with a dry-run default;
+- a **daily scheduled job** that fetches PayPal from a cutover date, stages, matches and applies a narrow **auto-post policy** (fees, single confirmed supplier invoices and transfers, payments to recipients configured as one of the books' own accounts, reimbursements whose reference names the invoices), with a dry-run default;
 - a **queue** for everything else, with the reason per transaction, Belege per transaction, a Belege inbox, "create supplier invoice from transaction", a home-page box and mail with backoff reminders;
 - a PHPUnit suite.
 
@@ -40,6 +40,7 @@ The first provider is **BinX CSV**. The module currently:
 - provides a read-only native posting preview before any Dolibarr core mutation;
 - can explicitly post confirmed company-currency customer/supplier invoice payments through native `Paiement` / `PaiementFourn` APIs;
 - can explicitly post bank fees through native `PaymentVarious`, which creates its linked Dolibarr bank line;
+- can explicitly post a transfer between the transaction's bank account and another bank account of the books, as two bank lines linked to each other the way Dolibarr's own transfer screen books them;
 - stores a BankSync posting audit record with a unique transaction boundary so the same bank transaction cannot be posted twice;
 - never writes directly to Dolibarr core business tables when a native domain API exists.
 
@@ -329,7 +330,7 @@ GitHub Actions runs `php -l` against every PHP file and PHPUnit on PHP 7.4 and 8
 3. Implement signed credit-note settlement components.
 4. Implement native salary posting through `PaymentSalary`.
 5. Implement native social-contribution/tax posting through the corresponding Dolibarr workflow.
-6. Add controlled internal-transfer and unmatched-generic-bank workflows.
+6. Add an unmatched-generic-bank workflow. Internal transfers are posted since this fork's 1.2.0.
 7. Add explicit reversal/unposting assistance while preserving audit history.
 8. Add a Wise API provider.
 9. Add CAMT.053 / MT940 statement providers.

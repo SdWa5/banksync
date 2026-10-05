@@ -12,7 +12,7 @@ PayPal Transaction Search API
   -> PayPalTransactionMapper  one entry for the gross amount, a second one for a fee
   -> BankSyncImporter         staging, duplicate check per entry
   -> BankSyncAutoPoster       matcher, then BankSyncAutoPostPolicy
-  -> posted                   native PaiementFourn or PaymentVarious, PayPal ID in num_chq
+  -> posted                   native PaiementFourn, PaymentVarious or transfer, PayPal ID in num_chq
   -> or queued                with a reason, mailed to the queue's recipients
 ```
 
@@ -68,6 +68,8 @@ as a manual conversion of the balance, is staged as `other` and waits in the que
 |---|---|
 | PayPal fee | posted as `PaymentVarious` |
 | outgoing, the matcher confirmed exactly one supplier invoice for the full amount | posted as `PaiementFourn` |
+| outgoing, a person confirmed a transfer to another bank account for the full amount | posted as a transfer |
+| outgoing, the recipient's e-mail address is listed under "Recipients paid by transfer" | posted as a transfer to the bank account listed for it |
 | outgoing, the reference names supplier invoices such as `SI2610-0003 SI2610-0007` that are validated, unpaid, belong to one thirdparty, whose remaining amounts add up exactly to the payment, and whose thirdparty is the recipient by e-mail or name | posted as one `PaiementFourn` allocated across these invoices |
 | incoming money, withdrawals, refunds, unknown codes, anything ambiguous | queued with its reason |
 
@@ -79,9 +81,33 @@ Every decision lands in `llx_banksync_autopost`, one row per transaction holding
 decision, its reason code and detail. For a posted transaction that row is the audit record of
 the automatic posting, next to the `llx_banksync_posting` record BankSync writes for every posting.
 
+A listed recipient wins over invoice references in the PayPal Mitteilung, and a confirmed match wins
+over the list.
+
 The reference pattern defaults to Dolibarr's supplier invoice numbering (`SI` + `yymm-nnnn`). The
 recipient check is deliberately strict, and it works because PayPal reports the recipient of an
 outgoing payment in `payer_info`.
+
+## Transfers to the books' own accounts
+
+Some payments move money between two accounts the books keep, rather than paying a third party.
+The case this was built for is an association whose members advance purchases. Each member gets a
+bank account in Dolibarr that holds what the association owes them. A purchase the member paid is a
+supplier invoice of the shop, paid from that account, which goes negative. A reimbursement by PayPal
+moves money from the PayPal account into the member's account, back towards zero, and money the
+member collected for the association, such as donations, is booked into it as well. Its balance is
+therefore what is open between the association and that member at any time, and an advance can be
+set off against a claim without any money moving.
+
+"Recipients paid by transfer" in setup maps an e-mail address to a Dolibarr bank account ID, one
+entry per line, for example `member@example.org=3`. An outgoing PayPal payment to a listed address
+is posted as a transfer to that account. Incoming money from a listed address stays in the queue,
+because it may as well be a membership fee. A person settles it under reconciliation with the
+target "Internal transfer", which lists the other open bank accounts.
+
+A transfer is booked like Dolibarr's own transfer screen does it, as one line on each account,
+linked to each other. Both lines carry the PayPal transaction ID in `num_chq`. A transfer to or from
+a cash account is booked as cash (`LIQ`), because Dolibarr's cash accounts accept nothing else.
 
 ## The queue
 
@@ -112,7 +138,7 @@ days. A mail about new items resets that interval, and an empty queue sends noth
 |---|---|
 | `read` | the lists, the Belege and the queue box |
 | `import` | uploading Belege, confirming matches, creating supplier invoices (also needs Dolibarr's own right to create supplier invoices) |
-| `post` | posting, including the "post now" option of the quick-create form |
+| `post` | posting, including the "post now" option of the quick-create form. Posting a transfer by hand also needs Dolibarr's own right to make transfers |
 
 ## Setup
 
@@ -156,6 +182,7 @@ the next run will not reach back that far.
 | `BANKSYNC_PAYPAL_SYNCED_UNTIL` | end of the last staged window, written by the job | none, the first run starts at the cutover |
 | `BANKSYNC_AUTOPOST_ENABLED` | post instead of recording `would_post` | off |
 | `BANKSYNC_NOTIFY_EMAIL` | comma-separated queue mail recipients | none, no mail |
+| `BANKSYNC_TRANSFER_ACCOUNTS` | recipients paid by transfer, `e-mail=bank account ID` per line | none |
 
 ## Limits
 
