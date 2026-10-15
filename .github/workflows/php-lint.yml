@@ -1,14 +1,20 @@
 name: PHP lint
 
+# Every branch push runs, so a feature branch is validated on its exact commit before it is merged.
 on:
   push:
-    branches: [main]
   pull_request:
+
+# The token gets read access and nothing else. No job writes to the repository or reads `secrets`.
+permissions:
+  contents: read
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Lint PHP files
         run: find . -type f -name '*.php' -print0 | xargs -0 -n1 php -l
