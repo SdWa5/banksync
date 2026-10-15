@@ -10,6 +10,13 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+### Changed
+
+- GitHub Actions grants `contents: read`, pins checkout v4 and PHP setup v2 to upstream commits and does
+  not persist checkout credentials.
+- The lint and test workflows run on pushes to every branch, so a feature branch is validated before it
+  is merged.
+
 ## [1.2.0] - 2026-10-05
 
 ### Added
