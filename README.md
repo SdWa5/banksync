@@ -321,7 +321,7 @@ Code style of the fork's own files:
 docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/app" -w /app ghcr.io/php-cs-fixer/php-cs-fixer:3-php8.2 fix --dry-run --diff
 ```
 
-GitHub Actions runs `php -l` against every PHP file and PHPUnit on PHP 7.4 and 8.2 on pushes to any branch
+GitHub Actions runs `php -l` against every PHP file and PHPUnit on PHP 7.4, 8.2 and 8.5 on pushes to any branch
 and on pull requests. The workflows grant `contents: read`, pin checkout v4 and PHP setup v2 to upstream
 commits and do not persist checkout credentials. An action update means reviewing its upstream release and
 replacing the commit SHA while keeping the version-family comment.

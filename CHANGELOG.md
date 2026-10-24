@@ -16,6 +16,7 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
   not persist checkout credentials.
 - The lint and test workflows run on pushes to every branch, so a feature branch is validated before it
   is merged.
+- PHPUnit also runs on PHP 8.5, which the SdWa5 Dolibarr image uses since 2026-10-24.
 
 ## [1.2.0] - 2026-10-05
 
