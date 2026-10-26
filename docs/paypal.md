@@ -70,25 +70,6 @@ recognised as a duplicate whether a run paired it or not, and its transaction ID
 skipped as another currency. A conversion whose payment is not among the fetched transactions, such
 as a manual conversion of the balance, is staged as `other` and waits in the queue.
 
-### Ignoring a transaction
-
-A staged transaction that must never be booked, such as a hold release staged before 1.2.1, is ignored
-through the REST API. It needs the right "Post reconciled bank transactions" and a note, which the
-transactions list shows as the reason.
-
-```bash
-curl -X POST -H "DOLAPIKEY: $KEY" -H 'Content-Type: application/json' \
-    -d '{"note": "PayPal hold release, no money received"}' \
-    https://erp.sdwa5.org/api/index.php/banksync/transactions/2/ignore
-```
-
-| Response | Meaning |
-|---|---|
-| 200 `ignored` or `unchanged` | the transaction is ignored; a repeated call changes nothing |
-| 400 | the note is missing |
-| 404 | no such transaction in this entity |
-| 409 | the transaction is posted, has a bank line, a posting or confirmed matches, which have to be undone first |
-
 ## The auto-post policy
 
 | Transaction | What happens |
@@ -98,7 +79,15 @@ curl -X POST -H "DOLAPIKEY: $KEY" -H 'Content-Type: application/json' \
 | outgoing, a person confirmed a transfer to another bank account for the full amount | posted as a transfer |
 | outgoing, the recipient's e-mail address is listed under "Recipients paid by transfer" | posted as a transfer to the bank account listed for it |
 | outgoing, the reference names supplier invoices such as `SI2610-0003 SI2610-0007` that are validated, unpaid, belong to one thirdparty, whose remaining amounts add up exactly to the payment, and whose thirdparty is the recipient by e-mail or name | posted as one `PaiementFourn` allocated across these invoices |
+| outgoing shop purchase (`T0006`, `T0007`) without any match or suggestion, supplier known by PayPal e-mail or exact name, or not known at all | supplier invoice created (new supplier with name and e-mail if needed), then posted as `PaiementFourn`; the payment stays in the queue as "Beleg missing" until a Beleg exists |
+| the same purchase with a suggested match | queued as "A supplier invoice may match, confirm it" |
+| the same purchase with several thirdparties for the e-mail or name, or without a name | queued as "The supplier is not unambiguous", the quick-create form waits for the choice |
 | incoming money, withdrawals, refunds, unknown codes, anything ambiguous | queued with its reason |
+
+A supplier invoice created for a purchase gets PayPal's `invoice_id` (the shop's order reference)
+as supplier reference, failing that `PayPal <transaction ID>`, the payment's reference as line
+label, the paid amount as gross and VAT 0, because SdWa5 is a Kleinunternehmer. The supplier's own
+invoice number is on the Beleg.
 
 The matcher confirms a single invoice only at confidence 100 with amount, reference and partner
 or account all matching. With dry-run on, which is the default, the job records `would_post`
@@ -138,19 +127,27 @@ a cash account is booked as cash (`LIQ`), because Dolibarr's cash accounts accep
 
 ## The queue
 
-The transaction list has a status filter "Queue (needs a person)", which shows every open
-transaction the auto-poster left behind, with the reason under its status. A home-page box lists
-the oldest ones and counts the Belege inbox.
+The transaction list has a status filter "Queue (needs a person)", which shows every transaction
+the auto-poster left for a person and every outgoing payment with a supplier invoice but no Beleg,
+with the reason under its status. A home-page box lists the oldest ones and counts the Belege inbox.
+The list, the box, the mail and `GET banksync/queue` share one definition (`BankSyncQueue`).
+
+**Beleg missing.** A Beleg counts once Dolibarr's file index (`llx_ecm_files`) holds a file of the
+transaction's Belege directory or an uploaded, not generated, file of its supplier invoice. An upload
+on the Belege page, on the supplier invoice card or through the core documents API therefore takes
+the payment out of the queue at once.
 
 **Belege of a transaction.** Each transaction has a Belege page. Files uploaded there are served
-by Dolibarr's `document.php` with the BankSync read right. Once the transaction is matched to a
-supplier invoice, one button copies them into that invoice's own documents.
+by Dolibarr's `document.php` with the BankSync read right. Once the transaction has a supplier
+invoice, an upload there is also copied into that invoice's own documents, and the quick-create
+form copies the Belege already there.
 
 **Create supplier invoice from transaction.** For an outgoing payment without an invoice, the
-Belege page offers to create one. It takes an existing supplier or creates a new one, uses the
-supplier's invoice number or a placeholder such as `Eigenbeleg 2026-10-03`, creates one line for
-the paid amount at the given VAT rate, validates the invoice, attaches the Belege and confirms the
-match. A user with the `post` right can post the payment in the same step.
+Belege page offers to create one, prefilled with the values above and the supplier found by e-mail
+or name. It takes an existing supplier or creates a new one, uses the supplier's invoice number or
+the prefilled reference, creates one line for the paid amount at the given VAT rate, validates the
+invoice, attaches the Belege and confirms the match. A user with the `post` right can post the
+payment in the same step. The REST API creates through the same code.
 
 **Belege inbox.** A Beleg whose payment is not known yet, such as a cash receipt, goes into the
 inbox and is assigned to a transaction later.
@@ -158,6 +155,33 @@ inbox and is assigned to a transaction later.
 **Mail.** When new items entered the queue, the job mails the configured recipients once. Items
 that stay open trigger a reminder after 3 days, then after 6, 12, 24 and from then on every 30
 days. A mail about new items resets that interval, and an empty queue sends nothing.
+
+## REST API
+
+All endpoints live under `/api/index.php/banksync/` and need an API key (`DOLAPIKEY` header). They
+answer 403 without the right, 404 for an unknown transaction, 409 when the transaction's state
+forbids the action and 400 for bad input.
+
+| Endpoint | Right | Does |
+|---|---|---|
+| `GET queue?limit=100` | `read` | the queue, oldest first: `id`, `booking_date`, `counterparty_name`, `amount`, `currency`, `reason` (a translation key) |
+| `GET transactions/{id}` | `read` | the transaction with `decision`, `matches`, `belege`, `invoice` (`id`, `ref` or null), `invoice_defaults` and `supplier` (`found`, `new` or `unclear`) |
+| `POST transactions/{id}/supplierinvoice` | `import`, Dolibarr's create supplier invoices, and `post` with `"post": true` | the quick-create form; body `socid`, `new_thirdparty`, `email`, `ref_supplier`, `label`, `vat_rate`, `post`, all optional; returns `invoice_id`, `invoice_ref`, `posted`, `bank_line_id` |
+| `POST transactions/{id}/autopost` | `post` | runs the auto-post policy on this transaction now; body `{"dry_run": true}` by default. `false` posts what the policy allows even while "Post automatically" is off, because a person asks for it |
+| `POST transactions/{id}/ignore` | `post` | ignores the transaction for good; body `{"note": "..."}` required; `ignored`, or `unchanged` on a repeat; 409 when it is posted or has a bank line, a posting or confirmed matches |
+
+A Beleg of a supplier invoice goes through Dolibarr's own documents API, which indexes it:
+
+```bash
+curl -X POST -H "DOLAPIKEY: $KEY" -H 'Content-Type: application/json' \
+    -d "{\"filename\": \"thomann.pdf\", \"modulepart\": \"supplier_invoice\", \"ref\": \"SI2610-0001\", \"filecontent\": \"$(base64 -w0 thomann.pdf)\", \"fileencoding\": \"base64\"}" \
+    https://erp.sdwa5.org/api/index.php/documents/upload
+curl -X POST -H "DOLAPIKEY: $KEY" -H 'Content-Type: application/json' -d '{"dry_run": true}' \
+    https://erp.sdwa5.org/api/index.php/banksync/transactions/1/autopost
+```
+
+Files of a transaction's Belege page download with `GET documents/download?modulepart=banksync&original_file=transaction/<id>/<file>`.
+Uploading to the Belege page and the inbox has no endpoint yet.
 
 ## Rights
 

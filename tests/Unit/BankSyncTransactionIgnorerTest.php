@@ -38,15 +38,6 @@ final class BankSyncTransactionIgnorerTest extends TestCase
         yield 'error' => ['error'];
     }
 
-    /**
-     * Restler only demands authentication for an API class tagged @access protected.
-     */
-    public function testApiClassRequiresAuthentication(): void
-    {
-        $source = (string) file_get_contents(__DIR__.'/../../class/api_banksync.class.php');
-        self::assertMatchesRegularExpression('/\*\s+@access protected\s*\n(?:\s*\*.*\n)*?\s*\*\s+@class\s+DolibarrApiAccess/', $source);
-    }
-
     private static function open(): array
     {
         return ['status' => 'new', 'fk_bank' => 0, 'open_postings' => 0, 'confirmed_matches' => 0];

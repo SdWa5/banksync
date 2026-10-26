@@ -8,6 +8,8 @@ require_once __DIR__.'/banksyncautopostpolicy.class.php';
 require_once __DIR__.'/banksynccandidatematcher.class.php';
 require_once __DIR__.'/banksyncmatchmanager.class.php';
 require_once __DIR__.'/banksyncpostingservice.class.php';
+require_once __DIR__.'/banksyncpurchase.class.php';
+require_once __DIR__.'/banksyncsupplierinvoicefactory.class.php';
 require_once __DIR__.'/provider/paypaltransactionmapper.class.php';
 
 /**
@@ -47,6 +49,9 @@ class BankSyncAutoPoster
     /** @var BankSyncPostingService */
     private $poster;
 
+    /** @var BankSyncSupplierInvoiceFactory */
+    private $invoices;
+
     public function __construct($db, int $entity, ?BankSyncAutoPostPolicy $policy = null)
     {
         $this->db = $db;
@@ -58,6 +63,29 @@ class BankSyncAutoPoster
         $this->matcher = new BankSyncCandidateMatcher($db, $entity);
         $this->matchManager = new BankSyncMatchManager($db, $entity);
         $this->poster = new BankSyncPostingService($db, $entity);
+        $this->invoices = new BankSyncSupplierInvoiceFactory($db, $entity);
+    }
+
+    /**
+     * Decides one transaction now, for a person or an API client, and returns the recorded decision.
+     *
+     * @return array{decision: string, reason: string, detail: string}
+     */
+    public function processOne(int $id, User $user, bool $dryRun): array
+    {
+        if (null === $this->matcher->fetchTransaction($id)) {
+            throw new OutOfBoundsException(sprintf('Transaction %d not found.', $id));
+        }
+        $this->process($id, $user, $dryRun);
+
+        $resql = $this->db->query('SELECT decision, reason, detail FROM '.$this->db->prefix().'banksync_autopost WHERE entity = '.$this->entity.' AND fk_transaction = '.$id);
+        if (!$resql) {
+            throw new RuntimeException($this->db->lasterror());
+        }
+        $row = $this->db->fetch_object($resql);
+        $this->db->free($resql);
+
+        return ['decision' => (string) $row->decision, 'reason' => (string) $row->reason, 'detail' => (string) $row->detail];
     }
 
     /**
@@ -100,7 +128,13 @@ class BankSyncAutoPoster
                 'amount' => (string) $transaction->amount,
                 'counterparty_name' => (string) $transaction->counterparty_name,
                 'counterparty_email' => \is_array($raw) ? PayPalTransactionMapper::counterpartyEmail($raw) : '',
+                'transaction_code' => (string) $transaction->transaction_code,
+                'suggestion_count' => $this->suggestionCount($id),
             ];
+            // The supplier lookup is only needed where the policy may create an invoice.
+            if ('debit' === $facts['direction'] && 'transfer' === $facts['bank_event_type'] && BankSyncPurchase::isPurchaseCode($facts['transaction_code'])) {
+                $facts['supplier'] = $this->invoices->resolveSupplier($facts['counterparty_name'], $facts['counterparty_email']);
+            }
             $decision = $this->policy->decide($facts, $this->confirmedMatches($id), $this->referencedInvoices((string) $transaction->reference));
 
             if (BankSyncAutoPostPolicy::ACTION_QUEUE === $decision['action']) {
@@ -110,7 +144,7 @@ class BankSyncAutoPoster
                 return $this->record($id, self::DECISION_WOULD_POST, $decision['reason'], self::describe($decision), $user);
             }
 
-            return $this->post($id, $decision, $user);
+            return $this->post($id, $decision, $user, $facts);
         } catch (Throwable $e) {
             return $this->record($id, self::DECISION_ERROR, 'BankSyncAutoException', $e->getMessage(), $user);
         }
@@ -118,9 +152,25 @@ class BankSyncAutoPoster
 
     /**
      * @param array{action: string, reason: string, allocations: array<int, string>, detail: string} $decision
+     * @param array<string, mixed>                                                                   $facts
      */
-    private function post(int $id, array $decision, User $user): string
+    private function post(int $id, array $decision, User $user, array $facts): string
     {
+        if (BankSyncAutoPostPolicy::ACTION_CREATE_INVOICE === $decision['action']) {
+            $transaction = $this->matcher->fetchTransaction($id);
+            $defaults = BankSyncPurchase::invoiceDefaults($transaction);
+            $this->invoices->createFromTransaction(
+                $transaction,
+                (int) $facts['supplier']['id'],
+                (string) $transaction->counterparty_name,
+                $defaults['ref_supplier'],
+                $defaults['label'],
+                $defaults['vat_rate'],
+                $user,
+                (string) $facts['counterparty_email'],
+                'autopost_purchase'
+            );
+        }
         if (BankSyncAutoPostPolicy::ACTION_POST_ALLOCATION === $decision['action']) {
             $this->matchManager->clearSuggested($id);
             foreach ($decision['allocations'] as $invoiceId => $amount) {
@@ -188,6 +238,18 @@ class BankSyncAutoPoster
         return $matches;
     }
 
+    private function suggestionCount(int $id): int
+    {
+        $count = 0;
+        foreach ($this->matchManager->getForTransaction($id) as $match) {
+            if ('suggested' === (string) $match->status) {
+                ++$count;
+            }
+        }
+
+        return $count;
+    }
+
     /**
      * Looks up every supplier invoice the reference names, keyed by reference, null where none exists.
      *
@@ -244,6 +306,9 @@ class BankSyncAutoPoster
      */
     private static function describe(array $decision): string
     {
+        if (BankSyncAutoPostPolicy::ACTION_CREATE_INVOICE === $decision['action']) {
+            return 'supplier invoice for '.$decision['detail'];
+        }
         if ([] === $decision['allocations']) {
             return $decision['action'];
         }

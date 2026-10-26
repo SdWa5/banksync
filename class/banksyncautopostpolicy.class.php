@@ -2,14 +2,18 @@
 
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+require_once __DIR__.'/banksyncpurchase.class.php';
+
 /**
  * Decides which staged transactions may be posted without a person looking at them.
  *
  * The policy is deliberately narrow. It posts a fee, a payment that the matcher confirmed against
  * exactly one supplier invoice or a person confirmed as a transfer, a payment to a counterparty whose
  * e-mail address is configured as another of the books' own accounts, and a reimbursement whose
- * free-text reference names supplier invoices that add up to the amount. Everything else stays in
- * the queue with a reason code, which the queue shows and translates.
+ * free-text reference names supplier invoices that add up to the amount. A shop purchase without
+ * any invoice candidate gets its supplier invoice created and posted, unless the supplier is
+ * unclear. Everything else stays in the queue with a reason code, which the queue shows and
+ * translates.
  *
  * This class touches neither the database nor Dolibarr. BankSyncAutoPoster gathers the facts and
  * carries out the decision.
@@ -20,15 +24,19 @@ class BankSyncAutoPostPolicy
     public const ACTION_POST_ALLOCATION = 'post_allocation';
     public const ACTION_POST_TRANSFER = 'post_transfer';
     public const ACTION_QUEUE = 'queue';
+    public const ACTION_CREATE_INVOICE = 'create_invoice';
 
     public const REASON_FEE = 'BankSyncAutoFee';
     public const REASON_CONFIRMED_MATCH = 'BankSyncAutoConfirmedMatch';
     public const REASON_REIMBURSEMENT = 'BankSyncAutoReimbursement';
     public const REASON_TRANSFER = 'BankSyncAutoTransfer';
+    public const REASON_PURCHASE = 'BankSyncAutoPurchase';
     public const REASON_INCOMING = 'BankSyncQueueIncoming';
     public const REASON_EVENT_TYPE = 'BankSyncQueueEventType';
     public const REASON_NO_MATCH = 'BankSyncQueueNoMatch';
     public const REASON_AMBIGUOUS_MATCH = 'BankSyncQueueAmbiguousMatch';
+    public const REASON_SUGGESTION = 'BankSyncQueueSuggestion';
+    public const REASON_SUPPLIER_UNCLEAR = 'BankSyncQueueSupplierUnclear';
     public const REASON_INVOICE_UNKNOWN = 'BankSyncQueueInvoiceUnknown';
     public const REASON_INVOICE_NOT_OPEN = 'BankSyncQueueInvoiceNotOpen';
     public const REASON_MIXED_THIRDPARTIES = 'BankSyncQueueMixedThirdparties';
@@ -107,9 +115,11 @@ class BankSyncAutoPostPolicy
      * For ACTION_POST_ALLOCATION the allocations are keyed by supplier invoice ID, for
      * ACTION_POST_TRANSFER by the ID of the bank account the money goes to or comes from.
      *
-     * @param array{direction: string, bank_event_type: string, amount: string|float, counterparty_name?: string, counterparty_email?: string}                            $transaction
-     * @param array<int, array{target_type: string, allocated_amount: string|float}>                                                                                      $confirmedMatches   Confirmed matches the matcher left on the transaction
-     * @param array<string, array{id: int, ref: string, open: bool, remaining: string|float, thirdparty_id: int, thirdparty_name: string, thirdparty_email: string}|null> $referencedInvoices Lookups for extractInvoiceRefs(), keyed by reference, null when not found
+     * For ACTION_CREATE_INVOICE the detail names the supplier, see BankSyncPurchase::supplierDecision().
+     *
+     * @param array{direction: string, bank_event_type: string, amount: string|float, counterparty_name?: string, counterparty_email?: string, transaction_code?: string, suggestion_count?: int, supplier?: array{status: string, id: int, detail: string}} $transaction
+     * @param array<int, array{target_type: string, allocated_amount: string|float}>                                                                                                                                                                         $confirmedMatches   Confirmed matches the matcher left on the transaction
+     * @param array<string, array{id: int, ref: string, open: bool, remaining: string|float, thirdparty_id: int, thirdparty_name: string, thirdparty_email: string}|null>                                                                                    $referencedInvoices Lookups for extractInvoiceRefs(), keyed by reference, null when not found
      *
      * @return array{action: string, reason: string, allocations: array<int, string>, detail: string}
      */
@@ -147,10 +157,34 @@ class BankSyncAutoPostPolicy
         }
 
         if ([] === $referencedInvoices) {
-            return self::decision(self::ACTION_QUEUE, self::REASON_NO_MATCH);
+            return self::decidePurchase($transaction);
         }
 
         return $this->decideReimbursement($transaction, $amount, $referencedInvoices);
+    }
+
+    /**
+     * A shop purchase without any invoice is the straightforward case: its supplier invoice can be
+     * created from the payment alone. A suggested match or an unclear supplier goes to a person.
+     *
+     * @param array<string, mixed> $transaction
+     *
+     * @return array{action: string, reason: string, allocations: array<int, string>, detail: string}
+     */
+    private static function decidePurchase(array $transaction): array
+    {
+        if (!BankSyncPurchase::isPurchaseCode((string) ($transaction['transaction_code'] ?? ''))) {
+            return self::decision(self::ACTION_QUEUE, self::REASON_NO_MATCH);
+        }
+        if ((int) ($transaction['suggestion_count'] ?? 0) > 0) {
+            return self::decision(self::ACTION_QUEUE, self::REASON_SUGGESTION);
+        }
+        $supplier = $transaction['supplier'] ?? null;
+        if (!\is_array($supplier) || BankSyncPurchase::SUPPLIER_UNCLEAR === (string) ($supplier['status'] ?? '')) {
+            return self::decision(self::ACTION_QUEUE, self::REASON_SUPPLIER_UNCLEAR, [], \is_array($supplier) ? (string) ($supplier['detail'] ?? '') : '');
+        }
+
+        return self::decision(self::ACTION_CREATE_INVOICE, self::REASON_PURCHASE, [], (string) ($supplier['detail'] ?? ''));
     }
 
     /**
