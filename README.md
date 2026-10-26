@@ -9,6 +9,7 @@ BankSync is a Dolibarr external module for importing, classifying, reconciling a
 - a **PayPal provider** reading the Transaction Search API, with fees as entries of their own, payments in another currency staged through their conversion, and the PayPal transaction ID on every bank line;
 - a **daily scheduled job** that fetches PayPal from a cutover date, stages, matches and applies a narrow **auto-post policy** (fees, single confirmed supplier invoices and transfers, payments to recipients configured as one of the books' own accounts, reimbursements whose reference names the invoices), with a dry-run default;
 - a **queue** for everything else, with the reason per transaction, Belege per transaction, a Belege inbox, "create supplier invoice from transaction", a home-page box and mail with backoff reminders;
+- a **REST endpoint** `POST /api/index.php/banksync/transactions/{id}/ignore` that ignores a staged transaction for good, see [docs/paypal.md](docs/paypal.md#ignoring-a-transaction);
 - a PHPUnit suite.
 
 The fork follows SemVer from 1.0.0, its first production release on erp.sdwa5.org. A minor release changes nothing a deployment relies on, so pinning the major version is safe. Deployments check out a tag.

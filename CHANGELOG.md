@@ -10,6 +10,14 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-26
+
+### Added
+
+- REST endpoint `POST banksync/transactions/{id}/ignore`, which ignores a staged transaction with a
+  note and records the person in the decision audit. Posted transactions and transactions with
+  postings or confirmed matches are refused.
+
 ## [1.2.1] - 2026-10-26
 
 ### Changed

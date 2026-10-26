@@ -70,6 +70,25 @@ recognised as a duplicate whether a run paired it or not, and its transaction ID
 skipped as another currency. A conversion whose payment is not among the fetched transactions, such
 as a manual conversion of the balance, is staged as `other` and waits in the queue.
 
+### Ignoring a transaction
+
+A staged transaction that must never be booked, such as a hold release staged before 1.2.1, is ignored
+through the REST API. It needs the right "Post reconciled bank transactions" and a note, which the
+transactions list shows as the reason.
+
+```bash
+curl -X POST -H "DOLAPIKEY: $KEY" -H 'Content-Type: application/json' \
+    -d '{"note": "PayPal hold release, no money received"}' \
+    https://erp.sdwa5.org/api/index.php/banksync/transactions/2/ignore
+```
+
+| Response | Meaning |
+|---|---|
+| 200 `ignored` or `unchanged` | the transaction is ignored; a repeated call changes nothing |
+| 400 | the note is missing |
+| 404 | no such transaction in this entity |
+| 409 | the transaction is posted, has a bank line, a posting or confirmed matches, which have to be undone first |
+
 ## The auto-post policy
 
 | Transaction | What happens |
