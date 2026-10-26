@@ -13,6 +13,7 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 ### Added
 
 - `TODO.md` with the fork's open work.
+- TODO: Thomann mails its invoices to mail@sdwa5.org.
 
 ## [1.4.0] - 2026-10-26
 
