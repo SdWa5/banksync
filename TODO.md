@@ -14,8 +14,11 @@ Open work on this fork. Operating steps on erp.sdwa5.org, such as switching on a
 2. **Receive Belege by mail** (ca. 8 Stunden, plus deciding on a mailbox). Dolibarr's email collector accepts module
    operations through the hook `doCollectImapOneCollector`, so a BankSync operation can put attachments into the
    Belege inbox. `mail@sdwa5.org` is a Google Group and cannot be read over IMAP, so a real mailbox or a service
-   account with OAuth is needed. Invoices also come as shop downloads (Amazon), to members' private addresses and
-   through the Finanzen WhatsApp group, so mail covers only part of them.
+   account with OAuth is needed, for example a Workspace user such as `belege@` that is a member of the group.
+   Thomann mails its invoice PDF on its own ("Versandbenachrichtigung und Rechnung" to `mail@sdwa5.org`, measured
+   on 2026-10-16 at 13:30, the day of the payment), so together with items 1 and 3 a Thomann purchase needs nobody.
+   Invoices also come as shop downloads (Amazon), to members' private addresses and through the Finanzen WhatsApp
+   group, so mail covers only part of them.
 3. **Assign inbox Belege to their payments automatically** (ca. 6 Stunden). Match the amount and the supplier name
    in the PDF text against open outgoing payments, with the parser from item 1, and leave every ambiguous Beleg to
    a person. Worth it only together with item 2.
