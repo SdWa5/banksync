@@ -26,6 +26,14 @@ class PayPalTransactionMapper
      */
     private const IMPORTED_STATUSES = ['S', 'V'];
 
+    /**
+     * Account holds (`T15xx`) and the release of a hold (`T1105`) are never staged. A hold for an
+     * open authorisation stays pending and is skipped, so staging its release alone would book money
+     * that never arrived; the capture that follows is the only real movement (measured 2026-10-26).
+     */
+    private const HOLD_CODE_GROUP = 'T15';
+    private const HOLD_RELEASE_CODE = 'T1105';
+
     /** @var PayPalEventMapper */
     private $eventMapper;
 
@@ -53,6 +61,11 @@ class PayPalTransactionMapper
         $id = trim((string) ($info['transaction_id'] ?? ''));
         if ('' === $id) {
             throw new RuntimeException('PayPal transaction without transaction_id.');
+        }
+
+        $code = strtoupper(trim((string) ($info['transaction_event_code'] ?? '')));
+        if (self::HOLD_RELEASE_CODE === $code || 0 === strpos($code, self::HOLD_CODE_GROUP)) {
+            return [];
         }
 
         $status = strtoupper(trim((string) ($info['transaction_status'] ?? '')));

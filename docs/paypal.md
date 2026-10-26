@@ -29,6 +29,7 @@ looked up in PayPal's activity list and the other way round.
 | `T01xx` fees | `bank_fee` | `PPL` |
 | `T03xx` bank deposits, `T04xx` bank withdrawals | `internal_transfer` | `VIR` |
 | `T11xx` reversals and refunds | `refund` | `PPL` |
+| `T15xx` account holds, `T1105` release of a hold | never staged | none |
 | `T20xx` transfers between balances | `internal_transfer` | `PPL` |
 | `T02xx` currency conversion of a foreign-currency payment | that of the payment | that of the payment |
 | anything else, including a conversion without its payment | `other` | none, never posted |
@@ -42,6 +43,13 @@ reference is the first non-empty field of `transaction_note` (what the payer typ
 `transaction_subject` and `invoice_id`, and failing all three the item names of `cart_info`, which is
 all a shop purchase usually carries. The counterparty is taken from `payer_info`, which for an
 outgoing payment is the recipient, as measured against the live API on 2026-10-05.
+
+### Holds
+
+A payment that a shop authorises first and captures later puts a hold on the balance. PayPal books it
+as a pending `T15xx` hold, and on capture as a `T1105` release of the hold plus the `T0006` payment, all
+three with their own amount. Measured on 2026-10-16, the capture of a Thomann order of 143.12 EUR moved
+the balance by exactly the payment, so only the payment is staged and the hold and its release are skipped.
 
 ### Payments in another currency
 
