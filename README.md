@@ -14,7 +14,7 @@ BankSync is a Dolibarr external module for importing, classifying, reconciling a
 
 The fork follows SemVer from 1.0.0, its first production release on erp.sdwa5.org. A minor release changes nothing a deployment relies on, so pinning the major version is safe. Deployments check out a tag.
 
-Setup, the policy and the queue are described in [docs/paypal.md](docs/paypal.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md). The fork's own files follow Symfony coding standards (`.php-cs-fixer.dist.php`), and upstream files keep their style so rebases stay cheap.
+Setup, the policy and the queue are described in [docs/paypal.md](docs/paypal.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md), open work in [TODO.md](TODO.md). The fork's own files follow Symfony coding standards (`.php-cs-fixer.dist.php`), and upstream files keep their style so rebases stay cheap.
 
 ## Current status: 0.4.1
 
@@ -338,7 +338,6 @@ replacing the commit SHA while keeping the version-family comment.
 7. Add explicit reversal/unposting assistance while preserving audit history.
 8. Add a Wise API provider.
 9. Add CAMT.053 / MT940 statement providers.
-10. Extend the REST API to the Belege page, the inbox, reconciliation, posting, import and account mapping.
 
 ## License
 
