@@ -10,6 +10,10 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+### Added
+
+- `TODO.md` with the fork's open work.
+
 ## [1.4.0] - 2026-10-26
 
 ### Added
