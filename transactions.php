@@ -12,6 +12,7 @@ if (!$res) die('Include of main fails');
 
 require_once __DIR__.'/class/banksyncschema.class.php';
 require_once __DIR__.'/class/banksynccandidatematcher.class.php';
+require_once __DIR__.'/class/banksyncqueue.class.php';
 
 $langs->load('banksync@banksync');
 if (!isModEnabled('banksync')) accessforbidden('BankSync module is not enabled.');
@@ -189,14 +190,14 @@ if (!empty($filters['filter_counterparty'])) $where[] = "t.counterparty_name LIK
 if (!empty($filters['filter_reference'])) $where[] = "t.reference LIKE '%".$db->escape($filters['filter_reference'])."%'";
 // "queue" is not a stored status: it is every open transaction the auto-poster left for a person.
 if (!empty($filters['filter_status']) && $filters['filter_status'] === 'queue') {
-    $where[] = "t.status IN ('new', 'matched', 'partially_matched') AND EXISTS (SELECT 1 FROM ".$db->prefix()."banksync_autopost AS apq WHERE apq.fk_transaction = t.rowid AND apq.entity = t.entity AND apq.decision IN ('queued', 'error'))";
+    $where[] = BankSyncQueue::condition($db->prefix(), 't', 'ap');
 } elseif (!empty($filters['filter_status'])) {
     $where[] = "t.status = '".$db->escape($filters['filter_status'])."'";
 }
 $whereSql = implode(' AND ', $where);
 
 $totalRows = 0;
-$countSql = 'SELECT COUNT(*) AS nb FROM '.$db->prefix().'banksync_transaction AS t WHERE '.$whereSql;
+$countSql = 'SELECT COUNT(*) AS nb FROM '.$db->prefix().'banksync_transaction AS t'.BankSyncQueue::join($db->prefix(), 't', 'ap').' WHERE '.$whereSql;
 $countRes = $db->query($countSql);
 if ($countRes) {
     $countObj = $db->fetch_object($countRes);
@@ -213,7 +214,8 @@ $sql .= ' t.bank_event_type, t.dolibarr_payment_code, t.classification_confidenc
 $sql .= ' a.source_account_number, a.mapping_status, a.fk_bank_account,';
 $sql .= ' ba.label AS bank_account_label, ba.ref AS bank_account_ref,';
 $sql .= ' bm.rowid AS match_id, bm.target_type AS match_target_type, bm.confidence AS match_confidence, bm.status AS match_status, bm.match_method AS match_method,';
-$sql .= ' ap.decision AS autopost_decision, ap.reason AS autopost_reason, ap.detail AS autopost_detail';
+$sql .= ' ap.decision AS autopost_decision, ap.reason AS autopost_reason, ap.detail AS autopost_detail,';
+$sql .= ' CASE WHEN '.BankSyncQueue::condition($db->prefix(), 't', 'ap').' THEN '.BankSyncQueue::reason('t', 'ap').' ELSE NULL END AS queue_reason';
 $sql .= ' FROM '.$db->prefix().'banksync_transaction AS t';
 $sql .= ' LEFT JOIN '.$db->prefix().'banksync_account AS a ON a.rowid = t.fk_banksync_account';
 $sql .= ' LEFT JOIN '.$db->prefix().'bank_account AS ba ON ba.rowid = a.fk_bank_account';
@@ -322,6 +324,9 @@ if ($resql) {
         if (!empty($obj->autopost_reason)) {
             print '<br><span class="small'.(in_array((string) $obj->autopost_decision, array('queued', 'error'), true) ? ' warning' : ' opacitymedium').'" title="'.dol_escape_htmltag((string) $obj->autopost_detail).'">';
             print dol_escape_htmltag($langs->trans('BankSyncAutoDecision_'.$obj->autopost_decision).': '.$langs->trans((string) $obj->autopost_reason)).'</span>';
+        }
+        if (BankSyncQueue::REASON_BELEG_MISSING === (string) $obj->queue_reason) {
+            print '<br><span class="small warning">'.dol_escape_htmltag($langs->trans(BankSyncQueue::REASON_BELEG_MISSING)).'</span>';
         }
         print '</td></tr>';
     }

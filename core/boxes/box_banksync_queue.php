@@ -34,9 +34,10 @@ class box_banksync_queue extends ModeleBoxes
      */
     public function loadBox($max = 5)
     {
-        global $langs;
+        global $conf, $langs;
 
         require_once dol_buildpath('/banksync/class/banksyncschema.class.php', 0);
+        require_once dol_buildpath('/banksync/class/banksyncqueue.class.php', 0);
         require_once dol_buildpath('/banksync/class/banksyncbelegstore.class.php', 0);
         $langs->load('banksync@banksync');
         BankSyncSchema::ensure($this->db);
@@ -44,16 +45,7 @@ class box_banksync_queue extends ModeleBoxes
         $this->max = $max;
         $listUrl = dol_buildpath('/banksync/transactions.php', 1).'?mainmenu=bank&leftmenu=banksync_transactions&filter_status=queue';
 
-        $from = ' FROM '.$this->db->prefix().'banksync_transaction AS t';
-        $from .= ' INNER JOIN '.$this->db->prefix().'banksync_autopost AS a ON a.fk_transaction = t.rowid AND a.entity = t.entity';
-        $from .= ' WHERE t.entity IN ('.getEntity('banksync').')';
-        $from .= " AND t.status IN ('new', 'matched', 'partially_matched') AND a.decision IN ('queued', 'error')";
-
-        $total = 0;
-        $resql = $this->db->query('SELECT COUNT(*) AS n'.$from);
-        if ($resql && ($obj = $this->db->fetch_object($resql))) {
-            $total = (int) $obj->n;
-        }
+        $total = BankSyncQueue::count($this->db, (int) $conf->entity);
 
         $this->info_box_head = [
             'text' => $langs->trans('BankSyncBoxQueue').'<a class="paddingleft valignmiddle" href="'.dol_escape_htmltag($listUrl).'"><span class="badge">'.$total.'</span></a>',
@@ -61,13 +53,12 @@ class box_banksync_queue extends ModeleBoxes
         ];
 
         $line = 0;
-        $resql = $this->db->query('SELECT t.rowid, t.booking_date, t.counterparty_name, t.amount, t.currency, a.reason'.$from.' ORDER BY t.booking_date ASC, t.rowid ASC'.$this->db->plimit($max, 0));
-        while ($resql && ($obj = $this->db->fetch_object($resql))) {
-            $url = dol_buildpath('/banksync/belege.php', 1).'?mainmenu=bank&leftmenu=banksync_transactions&id='.(int) $obj->rowid;
-            $this->info_box_contents[$line][] = ['td' => 'class="nowraponall"', 'text' => dol_print_date($this->db->jdate($obj->booking_date), 'day'), 'url' => $url];
-            $this->info_box_contents[$line][] = ['td' => 'class="tdoverflowmax150"', 'text' => (string) $obj->counterparty_name];
-            $this->info_box_contents[$line][] = ['td' => 'class="nowraponall right amount"', 'text' => price($obj->amount, 0, $langs, 0, -1, -1, $obj->currency)];
-            $this->info_box_contents[$line][] = ['td' => 'class="tdoverflowmax200 small opacitymedium"', 'text' => $langs->trans((string) $obj->reason)];
+        foreach (BankSyncQueue::items($this->db, (int) $conf->entity, $max) as $item) {
+            $url = dol_buildpath('/banksync/belege.php', 1).'?mainmenu=bank&leftmenu=banksync_transactions&id='.$item['id'];
+            $this->info_box_contents[$line][] = ['td' => 'class="nowraponall"', 'text' => dol_print_date($this->db->jdate($item['booking_date']), 'day'), 'url' => $url];
+            $this->info_box_contents[$line][] = ['td' => 'class="tdoverflowmax150"', 'text' => $item['counterparty_name']];
+            $this->info_box_contents[$line][] = ['td' => 'class="nowraponall right amount"', 'text' => price($item['amount'], 0, $langs, 0, -1, -1, $item['currency'])];
+            $this->info_box_contents[$line][] = ['td' => 'class="tdoverflowmax200 small opacitymedium"', 'text' => $langs->trans($item['reason'])];
             ++$line;
         }
 

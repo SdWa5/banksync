@@ -11,3 +11,4 @@ require_once __DIR__.'/../class/banksyncautopostpolicy.class.php';
 require_once __DIR__.'/../class/banksyncqueuenotifier.class.php';
 require_once __DIR__.'/../class/banksyncpaypalsync.class.php';
 require_once __DIR__.'/../class/banksynctransactionignorer.class.php';
+require_once __DIR__.'/../class/banksyncpurchase.class.php';

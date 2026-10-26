@@ -262,10 +262,65 @@ final class BankSyncAutoPostPolicyTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $override
-     *
      * @return array<string, mixed>
      */
+    /**
+     * @dataProvider createdPurchases
+     */
+    public function testCreatesTheInvoiceOfAPurchase(array $supplier): void
+    {
+        $decision = (new BankSyncAutoPostPolicy())->decide($this->tx(['transaction_code' => 'T0006', 'suggestion_count' => 0, 'supplier' => $supplier]), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::ACTION_CREATE_INVOICE, $decision['action']);
+        self::assertSame(BankSyncAutoPostPolicy::REASON_PURCHASE, $decision['reason']);
+        self::assertSame($supplier['detail'], $decision['detail']);
+    }
+
+    public function createdPurchases(): iterable
+    {
+        yield 'known supplier' => [['status' => 'found', 'id' => 7, 'detail' => 'thirdparty #7']];
+        yield 'new supplier' => [['status' => 'new', 'id' => 0, 'detail' => 'new supplier Thomann GmbH']];
+    }
+
+    public function testQueuesAPurchaseWithAnUnclearSupplier(): void
+    {
+        $decision = (new BankSyncAutoPostPolicy())->decide($this->tx(['transaction_code' => 'T0006', 'supplier' => ['status' => 'unclear', 'id' => 0, 'detail' => 'several thirdparties named X']]), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::ACTION_QUEUE, $decision['action']);
+        self::assertSame(BankSyncAutoPostPolicy::REASON_SUPPLIER_UNCLEAR, $decision['reason']);
+        self::assertSame('several thirdparties named X', $decision['detail']);
+    }
+
+    public function testQueuesAPurchaseWithoutSupplierLookup(): void
+    {
+        $decision = (new BankSyncAutoPostPolicy())->decide($this->tx(['transaction_code' => 'T0007']), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::REASON_SUPPLIER_UNCLEAR, $decision['reason']);
+    }
+
+    public function testLeavesASuggestedInvoiceToAPerson(): void
+    {
+        $decision = (new BankSyncAutoPostPolicy())->decide($this->tx(['transaction_code' => 'T0006', 'suggestion_count' => 1, 'supplier' => ['status' => 'found', 'id' => 7, 'detail' => 'thirdparty #7']]), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::ACTION_QUEUE, $decision['action']);
+        self::assertSame(BankSyncAutoPostPolicy::REASON_SUGGESTION, $decision['reason']);
+    }
+
+    public function testQueuesAPaymentThatIsNoPurchase(): void
+    {
+        $decision = (new BankSyncAutoPostPolicy())->decide($this->tx(['transaction_code' => 'T0000', 'supplier' => ['status' => 'new', 'id' => 0, 'detail' => '']]), [], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::REASON_NO_MATCH, $decision['reason']);
+    }
+
+    public function testAConfirmedMatchStillWinsOverAPurchase(): void
+    {
+        $decision = (new BankSyncAutoPostPolicy())->decide($this->tx(['transaction_code' => 'T0006', 'amount' => '-143.12']), [['target_type' => 'supplier_invoice', 'allocated_amount' => '143.12']], []);
+
+        self::assertSame(BankSyncAutoPostPolicy::ACTION_POST, $decision['action']);
+        self::assertSame(BankSyncAutoPostPolicy::REASON_CONFIRMED_MATCH, $decision['reason']);
+    }
+
     private function tx(array $override = []): array
     {
         return $override + ['direction' => 'debit', 'bank_event_type' => 'transfer', 'amount' => '-49.90', 'counterparty_name' => '', 'counterparty_email' => ''];

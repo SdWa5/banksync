@@ -10,6 +10,34 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-26
+
+### Added
+
+- A PayPal shop purchase (`T0006`, `T0007`) without any match or suggestion gets its supplier invoice
+  created from the payment and posted, with the supplier found by e-mail or exact name or created
+  with both. A suggested match or an unclear supplier is queued for a person instead.
+- The queue holds outgoing payments with a supplier invoice but no Beleg, read from Dolibarr's file
+  index, until a Beleg is uploaded on the Belege page, the invoice card or through the documents API.
+- REST endpoints `GET queue`, `GET transactions/{id}`, `POST transactions/{id}/supplierinvoice` and
+  `POST transactions/{id}/autopost`.
+
+### Changed
+
+- The quick-create form is prefilled with the found supplier and the shared invoice defaults, and
+  creates through the same code as the API and the auto-poster.
+- A Beleg uploaded once the supplier invoice exists is copied into the invoice at once.
+- The transaction list, the home-page box and the mail share one queue definition.
+- php-cs-fixer covers the fork's new classes and keeps the `@access protected` tag Restler needs.
+
+### Fixed
+
+- The queue list and box missed transactions in status `error`, which the mail already counted.
+
+### Removed
+
+- The "Attach these Belege to the supplier invoice" button, replaced by the automatic copy.
+
 ## [1.3.0] - 2026-10-26
 
 ### Added

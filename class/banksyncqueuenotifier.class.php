@@ -2,6 +2,8 @@
 
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+require_once __DIR__.'/banksyncqueue.class.php';
+
 /**
  * Mails the queue's recipients when transactions need a person, without nagging.
  *
@@ -69,7 +71,7 @@ class BankSyncQueueNotifier
         // dolibarr_set_const() lives here, and a scheduled run does not load it.
         require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 
-        $new = $this->count('notified = 0');
+        $new = $this->count('a.notified = 0');
         $open = $this->count('1 = 1');
         $plan = self::plan($new, $open, getDolGlobalInt('BANKSYNC_NOTIFY_LAST_SENT'), getDolGlobalInt('BANKSYNC_NOTIFY_INTERVAL_DAYS', self::FIRST_INTERVAL_DAYS), dol_now());
 
@@ -84,28 +86,18 @@ class BankSyncQueueNotifier
     }
 
     /**
-     * Queued items are those whose latest automatic decision kept them for a person.
+     * Counts queue items as BankSyncQueue defines them. An item is new while its decision is unnotified.
      */
     private function count(string $condition): int
     {
-        $sql = 'SELECT COUNT(*) AS n FROM '.$this->db->prefix().'banksync_autopost AS a';
-        $sql .= ' INNER JOIN '.$this->db->prefix().'banksync_transaction AS t ON t.rowid = a.fk_transaction';
-        $sql .= ' WHERE a.entity = '.$this->entity." AND a.decision IN ('queued', 'error') AND t.status NOT IN ('posted', 'ignored')";
-        $sql .= ' AND '.$condition;
-        $resql = $this->db->query($sql);
-        if (!$resql) {
-            throw new RuntimeException($this->db->lasterror());
-        }
-        $obj = $this->db->fetch_object($resql);
-        $this->db->free($resql);
-
-        return (int) $obj->n;
+        return BankSyncQueue::count($this->db, $this->entity, $condition);
     }
 
     private function markNotified(): void
     {
-        $sql = 'UPDATE '.$this->db->prefix().'banksync_autopost SET notified = 1';
-        $sql .= ' WHERE entity = '.$this->entity." AND decision IN ('queued', 'error') AND notified = 0";
+        $prefix = $this->db->prefix();
+        $sql = 'UPDATE '.$prefix.'banksync_autopost AS a INNER JOIN '.$prefix.'banksync_transaction AS t ON t.rowid = a.fk_transaction AND t.entity = a.entity';
+        $sql .= ' SET a.notified = 1 WHERE a.entity = '.$this->entity.' AND a.notified = 0 AND '.BankSyncQueue::condition($prefix);
         if (!$this->db->query($sql)) {
             throw new RuntimeException($this->db->lasterror());
         }
