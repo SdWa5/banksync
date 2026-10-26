@@ -10,6 +10,8 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-26
+
 ### Changed
 
 - GitHub Actions grants `contents: read`, pins checkout v4 and PHP setup v2 to upstream commits and does
@@ -17,6 +19,11 @@ This fork `SdWa5/banksync` starts at upstream `vanyolai/dolibarr-banksync` commi
 - The lint and test workflows run on pushes to every branch, so a feature branch is validated before it
   is merged.
 - PHPUnit also runs on PHP 8.5, which the SdWa5 Dolibarr image uses since 2026-10-24.
+
+### Fixed
+
+- PayPal account holds (`T15xx`) and their release (`T1105`) are no longer staged, so a captured
+  authorisation no longer shows up as an incoming refund.
 
 ## [1.2.0] - 2026-10-05
 

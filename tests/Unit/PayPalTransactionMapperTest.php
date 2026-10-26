@@ -70,6 +70,32 @@ final class PayPalTransactionMapperTest extends TestCase
         yield 'denied' => ['D'];
     }
 
+    /**
+     * @dataProvider holdCodes
+     */
+    public function testSkipsHoldsAndTheirRelease(string $code, string $status): void
+    {
+        self::assertSame([], $this->mapper()->map($this->detail(['transaction_event_code' => $code, 'transaction_status' => $status]), 'x'));
+    }
+
+    public function holdCodes(): iterable
+    {
+        yield 'pending hold' => ['T1501', 'P'];
+        yield 'completed hold' => ['T1501', 'S'];
+        yield 'hold release' => ['T1105', 'S'];
+    }
+
+    public function testKeepsARefundOfTheT11Group(): void
+    {
+        $entries = $this->mapper()->map($this->detail([
+            'transaction_event_code' => 'T1107',
+            'transaction_amount' => ['currency_code' => 'EUR', 'value' => '20.00'],
+        ]), 'x');
+
+        self::assertCount(1, $entries);
+        self::assertSame(BankSyncTransactionClassifier::TYPE_REFUND, $entries[0]->bankEventType);
+    }
+
     public function testKeepsReversals(): void
     {
         self::assertCount(1, $this->mapper()->map($this->detail(['transaction_status' => 'V']), 'x'));
